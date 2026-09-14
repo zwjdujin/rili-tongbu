@@ -1,8 +1,8 @@
 name: Deploy to Cloudflare Workers
 
+# 主要部署方式：Cloudflare 控制台绑定 GitHub 仓库（Workers Builds）
+# 此工作流仅作为手动备用，避免与自动部署重复触发
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

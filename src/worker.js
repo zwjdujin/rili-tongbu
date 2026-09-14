@@ -24,6 +24,11 @@ async function authenticate(request, env) {
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token) return null;
   if (env.ADMIN_TOKEN && token === env.ADMIN_TOKEN) return 'admin';
+  // 管理员登录会话（/api/login 签发，7 天有效）
+  const session = await env.DB.prepare(
+    'SELECT token FROM sessions WHERE token = ? AND expires_at > ?'
+  ).bind(token, now()).first();
+  if (session) return 'admin';
   const device = await env.DB.prepare(
     'SELECT * FROM devices WHERE token = ?'
   ).bind(token).first();
@@ -263,6 +268,26 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+
+    // 管理员登录（账号 + 密码，签发 7 天会话）
+    if (path === '/api/login' && method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      if (!env.ADMIN_PASSWORD) {
+        return json({ error: '未配置 ADMIN_PASSWORD，请先在 Worker 设置中添加该 Secret' }, 500);
+      }
+      const user = env.ADMIN_USER || 'admin';
+      if (body.username !== user || body.password !== env.ADMIN_PASSWORD) {
+        return json({ error: '账号或密码错误' }, 401);
+      }
+      const token = uuid();
+      const expiresAt = now() + 7 * 24 * 3600 * 1000;
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now()),
+        env.DB.prepare('INSERT INTO sessions (token, created_at, expires_at) VALUES (?, ?, ?)')
+          .bind(token, now(), expiresAt),
+      ]);
+      return json({ token, expires_at: expiresAt });
+    }
 
     // 健康检查 / 版本
     if (path === '/api/health') {

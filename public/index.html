@@ -54,20 +54,22 @@
 <body>
   <div id="login-view" class="login">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu v0.0.1 — 华为 / iOS / Windows 日历数据同步</p>
+    <p class="sub">rili-tongbu v0.0.2 — 华为 / iOS / Windows 日历数据同步</p>
     <div class="card">
       <h2>管理员登录</h2>
-      <input id="admin-token" type="password" placeholder="输入 ADMIN_TOKEN" />
-      <button id="login-btn" style="width:100%">进入控制台</button>
+      <input id="admin-user" type="text" placeholder="账号（默认 admin）" />
+      <input id="admin-pass" type="password" placeholder="密码（ADMIN_PASSWORD）" />
+      <button id="login-btn" style="width:100%">登录</button>
       <p class="muted" style="margin-top:10px">
-        ADMIN_TOKEN 由部署时 <code>wrangler secret put ADMIN_TOKEN</code> 设置。
+        账号由部署变量 <code>ADMIN_USER</code> 决定（默认 admin），密码为 Secret
+        <code>ADMIN_PASSWORD</code>，在 Worker 设置 → 变量中配置。
       </p>
     </div>
   </div>
 
   <div id="app-view" style="display:none">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu <span id="version">v0.0.1</span> ·
+    <p class="sub">rili-tongbu <span id="version">v0.0.2</span> ·
       <button class="ghost" id="logout-btn" style="padding:4px 10px;font-size:12px">退出</button>
     </p>
 
@@ -141,7 +143,6 @@
 <script>
 const $ = (s) => document.querySelector(s);
 let TOKEN = localStorage.getItem('rt_admin_token') || '';
-
 function toast(msg, ok = true) {
   const t = $('#toast');
   t.textContent = msg;
@@ -217,6 +218,7 @@ async function loadBackups() {
 function showApp() {
   $('#login-view').style.display = 'none';
   $('#app-view').style.display = 'block';
+  fetch('/api/health').then((r) => r.json()).then((d) => { $('#version').textContent = 'v' + d.version; }).catch(() => {});
   Promise.all([loadDevices(), loadCalendars(), loadEvents(), loadBackups()])
     .then(() => toast('已加载'))
     .catch((e) => { toast('加载失败：' + e.message, false); if (String(e.message).includes('unauthorized')) logout(); });
@@ -229,16 +231,27 @@ function logout() {
   $('#login-view').style.display = 'block';
 }
 
-$('#login-btn').onclick = async () => {
-  TOKEN = $('#admin-token').value.trim();
+async function login() {
+  const username = $('#admin-user').value.trim() || 'admin';
+  const password = $('#admin-pass').value;
+  if (!password) return toast('请输入密码', false);
   try {
-    await api('/api/devices');
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.status);
+    TOKEN = data.token;
     localStorage.setItem('rt_admin_token', TOKEN);
     showApp();
   } catch (e) { toast('登录失败：' + e.message, false); }
-};
+}
+$('#login-btn').onclick = login;
 $('#logout-btn').onclick = logout;
-$('#admin-token').addEventListener('keydown', (e) => e.key === 'Enter' && $('#login-btn').click());
+$('#admin-pass').addEventListener('keydown', (e) => e.key === 'Enter' && login());
+$('#admin-user').addEventListener('keydown', (e) => e.key === 'Enter' && $('#admin-pass').focus());
 
 $('#add-device').onclick = async () => {
   const name = $('#dev-name').value.trim();

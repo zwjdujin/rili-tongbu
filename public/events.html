@@ -14,17 +14,17 @@
     body {
       font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
       background: var(--bg); color: var(--text); min-height: 100vh;
-      padding: 16px 12px; max-width: 960px; margin: 0 auto;
+      padding: 12px 8px; max-width: 960px; margin: 0 auto;
     }
-    h1 { font-size: 20px; margin-bottom: 2px; }
-    .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+    h1 { font-size: 18px; margin-bottom: 2px; }
+    .sub { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
     .card {
       background: var(--card); border: 1px solid var(--border);
-      border-radius: 8px; padding: 12px; margin-bottom: 12px;
+      border-radius: 6px; padding: 10px; margin-bottom: 10px;
     }
-    .card h2 { font-size: 14px; margin-bottom: 8px; color: var(--accent); }
+    .card h2 { font-size: 13px; margin-bottom: 6px; color: var(--accent); }
     input, select, button, textarea {
-      font-size: 13px; padding: 6px 8px; border-radius: 4px;
+      font-size: 12px; padding: 4px 6px; border-radius: 3px;
       border: 1px solid var(--border); background: var(--bg); color: var(--text);
       outline: none;
     }
@@ -35,10 +35,10 @@
     button:disabled { opacity: .5; cursor: not-allowed; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
     .row label { flex: 0 0 80px; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; }
-    .muted { color: var(--muted); font-size: 11px; }
+    .muted { color: var(--muted); font-size: 10px; }
     .ok { color: var(--ok); } .err { color: var(--err); }
     #toast {
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -48,24 +48,26 @@
     .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .calendar-nav button { padding: 4px 8px; font-size: 12px; }
     .calendar-grid {
-      display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
-      margin-bottom: 8px;
-      max-height: 300px;
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+      margin-bottom: 6px;
+      max-height: 400px;
       overflow: hidden;
     }
-    .calendar-header { color: var(--muted); font-size: 12px; text-align: center; padding: 4px; }
+    .calendar-header { color: var(--muted); font-size: 10px; text-align: center; padding: 2px; }
     .calendar-day {
-      aspect-ratio: 1; border: 1px solid var(--border); border-radius: 4px;
-      padding: 2px; cursor: pointer; position: relative;
+      aspect-ratio: 1; border: 1px solid var(--border); border-radius: 3px;
+      padding: 1px; cursor: pointer; position: relative;
       display: flex; flex-direction: column; align-items: center;
-      justify-content: center; transition: all .2s;
-      font-size: 12px;
+      justify-content: center; transition: all .0.2s;
+      font-size: 11px;
     }
+    .calendar-day > div:first-child { font-weight: 500; margin-bottom: 1px; font-size: 12px; }
+    .calendar-day > div:last-child { font-size: 8px; line-height: 1.1; }
     .calendar-day:hover { background: var(--bg); }
     .calendar-day.today { border: 1px solid var(--accent); }
     .calendar-day.other-month { color: var(--muted); opacity: .5; }
     .calendar-day.selected { background: var(--accent); }
-    .lunar { font-size: 9px; line-height: 1.2; color: var(--muted); }
+    .lunar { font-size: 8px; line-height: 1.1; color: var(--muted); }
     .event-dot {
       position: absolute; bottom: 2px; width: 4px; height: 4px;
       background: var(--accent); border-radius: 50%;
@@ -77,14 +79,14 @@
     }
     .modal.active { display: flex; }
     .modal-content {
-      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-      padding: 20px; max-width: 500px; width: 90%;
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px; max-width: 500px; width: 90%;
     }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .close-btn { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 20px; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; margin-bottom: 4px; font-size: 13px; }
-    textarea { resize: vertical; min-height: 80px; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .close-btn { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 18px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; margin-bottom: 3px; font-size: 12px; }
+    textarea { resize: vertical; min-height: 60px; }
     .color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
     .color-option {
       width: 24px; height: 24px; border-radius: 4px; cursor: pointer;

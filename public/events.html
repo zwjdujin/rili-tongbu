@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>事件总览 · 日历同步</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
+      --ok: #22c55e; --err: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      padding: 24px 16px; max-width: 960px; margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px; margin-bottom: 16px;
+    }
+    .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+    input, select, button, textarea {
+      font-size: 14px; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    button { background: var(--accent); border: none; cursor: pointer; color: #fff; }
+    button.ghost { background: transparent; border: 1px solid var(--border); }
+    button.danger { background: var(--err); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .row label { flex: 0 0 80px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .ok { color: var(--ok); } .err { color: var(--err); }
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border); padding: 10px 16px;
+      border-radius: 8px; display: none; font-size: 13px; z-index: 10;
+    }
+    .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .calendar-nav button { padding: 4px 8px; font-size: 12px; }
+    .calendar-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+      margin-bottom: 12px;
+    }
+    .calendar-header { color: var(--muted); font-size: 12px; text-align: center; padding: 4px; }
+    .calendar-day {
+      aspect-ratio: 1; border: 1px solid var(--border); border-radius: 4px;
+      padding: 4px; cursor: pointer; position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      transition: all .2s;
+    }
+    .calendar-day:hover { background: var(--bg); }
+    .calendar-day.today { border: 1px solid var(--accent); }
+    .calendar-day.other-month { color: var(--muted); opacity: .5; }
+    .calendar-day.selected { background: var(--accent); }
+    .lunar { font-size: 10px; line-height: 1.2; color: var(--muted); }
+    .event-dot {
+      position: absolute; bottom: 2px; width: 4px; height: 4px;
+      background: var(--accent); border-radius: 50%;
+    }
+    .modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: none; align-items: center;
+      justify-content: center; z-index: 100;
+    }
+    .modal.active { display: flex; }
+    .modal-content {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px; max-width: 500px; width: 90%;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .close-btn { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 20px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; margin-bottom: 4px; font-size: 13px; }
+    textarea { resize: vertical; min-height: 80px; }
+    .color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+    .color-option {
+      width: 24px; height: 24px; border-radius: 4px; cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .color-option.selected { border-color: var(--text); }
+  </style>
+</head>
+<body>
+  <div id="app-view">
+    <h1>📅 事件总览</h1>
+    <p class="sub">日历同步 v0.0.7 · <button class="ghost" id="back-btn" style="padding:4px 10px;font-size:12px">返回控制台</button></p>
+
+    <div class="card">
+      <h2>月历视图</h2>
+      <div class="calendar-nav">
+        <div>
+          <button id="prev-month">◀</button>
+          <span id="current-month" style="margin:0 16px;font-size:16px"></span>
+          <button id="next-month">▶</button>
+        </div>
+        <div>
+          <button id="today-btn">今天</button>
+          <select id="year-select" style="margin-left:8px"></select>
+          <select id="month-select" style="margin-left:8px"></select>
+        </div>
+      </div>
+      <div id="calendar-grid" class="calendar-grid"></div>
+    </div>
+
+    <div class="card">
+      <h2>事件列表</h2>
+      <div class="row" style="margin-bottom:0">
+        <button id="add-event-btn">+ 添加事件</button>
+        <select id="calendar-filter">
+          <option value="">全部日历</option>
+        </select>
+        <input id="search-input" placeholder="搜索事件..." style="flex:1;min-width:200px" />
+      </div>
+      <table id="events-table">
+        <thead><tr><th>标题</th><th>时间</th><th>日历</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="event-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">添加事件</h2>
+        <button class="close-btn" id="close-modal">×</button>
+      </div>
+      <form id="event-form">
+        <div class="form-group">
+          <label>标题 *</label>
+          <input type="text" id="event-title" required />
+        </div>
+        <div class="form-group">
+          <label>日历</label>
+          <select id="event-calendar" required></select>
+        </div>
+        <div class="row">
+          <div style="flex:1">
+            <label>开始时间</label>
+            <input type="datetime-local" id="event-start" required />
+          </div>
+          <div style="flex:1">
+            <label>结束时间</label>
+            <input type="datetime-local" id="event-end" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>全天</label>
+          <input type="checkbox" id="event-allday" />
+        </div>
+        <div class="form-group">
+          <label>地点</label>
+          <input type="text" id="event-location" />
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="event-description"></textarea>
+        </div>
+        <div class="form-group">
+          <label>提醒</label>
+          <select id="event-reminder">
+            <option value="">无提醒</option>
+            <option value="5">5分钟前</option>
+            <option value="15">15分钟前</option>
+            <option value="30">30分钟前</option>
+            <option value="60">1小时前</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>重复</label>
+          <select id="event-recurrence">
+            <option value="">不重复</option>
+            <option value="DAILY">每天</option>
+            <option value="WEEKLY">每周</option>
+            <option value="MONTHLY">每月</option>
+            <option value="YEARLY">每年</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>颜色</label>
+          <div class="color-picker" id="color-picker"></div>
+        </div>
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:16px">
+          <button type="button" class="ghost" id="cancel-btn">取消</button>
+          <button type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const TOKEN = localStorage.getItem('rt_admin_token') || '';
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
+let selectedDate = null;
+let editingEvent = null;
+
+function toast(msg, ok = true) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.color = ok ? 'var(--ok)' : 'var(--err)';
+  setTimeout(() => (t.style.display = 'none'), 2500);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opts.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
+
+// 农历转换（简化版，只支持部分年份）
+function getLunarDate(date) {
+  const lunarMonths = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊'];
+  const lunarDays = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十',
+                    '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
+                    '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+  // 实际项目建议使用成熟的 lunar 库，这里简化处理
+  return { month: lunarMonths[0], day: lunarDays[0] };
+}
+
+function formatDate(date) {
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+}
+
+function renderCalendar() {
+  const grid = $('#calendar-grid');
+  const year = currentYear;
+  const month = currentMonth;
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const prevLastDay = new Date(year, month, 0);
+  const startDay = firstDay.getDay();
+  const endDay = lastDay.getDay();
+  
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+  let html = '';
+  
+  // 星期表头
+  weekDays.forEach(day => {
+    html += `<div class="calendar-header">${day}</div>`;
+  });
+  
+  // 上月日期
+  for (let i = startDay - 1; i >= 0; i--) {
+    const date = new Date(year, month - 1, prevLastDay.getDate() - i);
+    const lunar = getLunarDate(date);
+    html += `<div class="calendar-day other-month">
+      <div>${date.getDate()}</div>
+      <div class="lunar">${lunar.day}</div>
+    </div>`;
+  }
+  
+  // 当月日期
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    const date = new Date(year, month, day);
+    const today = new Date();
+    const isToday = formatDate(date) === formatDate(today);
+    const lunar = getLunarDate(date);
+    const isSelected = selectedDate && formatDate(date) === formatDate(selectedDate);
+    
+    html += `<div class="calendar-day ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}" data-date="${date.toISOString()}">
+      <div>${day}</div>
+      <div class="lunar">${lunar.day}</div>
+    </div>`;
+  }
+  
+  // 下月日期
+  for (let i = 1; i < 7 - endDay; i++) {
+    const date = new Date(year, month + 1, i);
+    const lunar = getLunarDate(date);
+    html += `<div class="calendar-day other-month">
+      <div>${date.getDate()}</div>
+      <div class="lunar">${lunar.day}</div>
+    </div>`;
+  }
+  
+  grid.innerHTML = html;
+  $('#current-month').textContent = `${year}年${month + 1}月`;
+  
+  // 绑定日期点击
+  grid.querySelectorAll('.calendar-day:not(.other-month)').forEach(day => {
+    day.onclick = () => {
+      selectedDate = new Date(day.dataset.date);
+      renderCalendar();
+      loadEvents();
+    };
+  });
+}
+
+async function loadCalendars() {
+  const { calendars } = await api('/api/calendars');
+  const filter = $('#calendar-filter');
+  filter.innerHTML = '<option value="">全部日历</option>' + 
+    calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const modalCalendar = $('#event-calendar');
+  modalCalendar.innerHTML = calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function loadEvents() {
+  const filter = $('#calendar-filter').value;
+  const search = $('#search-input').value;
+  let url = '/api/events';
+  const params = new URLSearchParams();
+  if (filter) params.append('calendar_id', filter);
+  if (search) params.append('search', search);
+  if (params.toString()) url += '?' + params;
+  
+  const { events } = await api(url);
+  const tbody = $('#events-table tbody');
+  tbody.innerHTML = events.slice(0, 100).map(e => {
+    const startDate = new Date(e.start_at);
+    const endDate = new Date(e.end_at);
+    const startStr = e.all_day 
+      ? startDate.toLocaleDateString('zh-CN')
+      : startDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const endStr = e.all_day 
+      ? endDate.toLocaleDateString('zh-CN')
+      : endDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    
+    return `<tr>
+      <td>${e.title}</td>
+      <td>${startStr} ${!e.all_day ? '-' + endStr : ''}</td>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${e.calendar_color || '#3b82f6'}"></span> ${e.calendar_name}</td>
+      <td><button class="danger" style="padding:3px 8px;font-size:12px" data-id="${e.id}">删除</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">暂无事件</td></tr>';
+  
+  // 绑定删除按钮
+  tbody.querySelectorAll('button').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('确定删除此事件？')) return;
+      try {
+        await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
+        toast('事件已删除');
+        loadEvents();
+      } catch (e) { toast('删除失败：' + e.message, false); }
+    };
+  });
+}
+
+// 事件表单处理
+document.getElementById('event-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const eventData = {
+    calendar_id: $('#event-calendar').value,
+    title: $('#event-title').value,
+    start_at: new Date($('#event-start').value).getTime(),
+    end_at: new Date($('#event-end').value).getTime(),
+    all_day: $('#event-allday').checked,
+    location: $('#event-location').value,
+    description: $('#event-description').value,
+    reminder_minutes: $('#event-reminder').value ? parseInt($('#event-reminder').value) : null,
+    recurrence: $('#event-recurrence').value || null,
+  };
+  
+  try {
+    if (editingEvent) {
+      await api('/api/events/' + editingEvent.id, { method: 'PUT', body: JSON.stringify(eventData) });
+      toast('事件已更新');
+    } else {
+      await api('/api/events', { method: 'POST', body: JSON.stringify(eventData) });
+      toast('事件已添加');
+    }
+    closeModal();
+    loadEvents();
+  } catch (err) {
+    toast('保存失败：' + err.message, false);
+  }
+};
+
+function openModal(event = null) {
+  editingEvent = event;
+  $('#modal-title').textContent = event ? '编辑事件' : '添加事件';
+  document.getElementById('event-modal').classList.add('active');
+  
+  if (event) {
+    $('#event-title').value = event.title;
+    $('#event-calendar').value = event.calendar_id;
+    $('#event-start').value = new Date(event.start_at).toISOString().slice(0, 16);
+    $('#event-end').value = new Date(event.end_at).toISOString().slice(0, 16);
+    $('#event-allday').checked = event.all_day;
+    $('#event-location').value = event.location || '';
+    $('#event-description').value = event.description || '';
+    $('#event-reminder').value = event.reminder_minutes || '';
+    $('#event-recurrence').value = event.recurrence || '';
+  } else {
+    document.getElementById('event-form').reset();
+    if (selectedDate) {
+      const date = new Date(selectedDate);
+      $('#event-start').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0).toISOString().slice(0, 16);
+      $('#event-end').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0).toISOString().slice(0, 16);
+    }
+  }
+}
+
+function closeModal() {
+  document.getElementById('event-modal').classList.remove('active');
+  editingEvent = null;
+}
+
+// 事件绑定
+$('#add-event-btn').onclick = () => openModal();
+$('#close-modal').onclick = closeModal;
+$('#cancel-btn').onclick = closeModal;
+document.getElementById('event-modal').onclick = (e) => {
+  if (e.target.id === 'event-modal') closeModal();
+};
+
+$('#prev-month').onclick = () => {
+  currentMonth--;
+  if (currentMonth < 0) {
+    currentMonth = 11;
+    currentYear--;
+  }
+  renderCalendar();
+  loadEvents();
+};
+
+$('#next-month').onclick = () => {
+  currentMonth++;
+  if (currentMonth > 11) {
+    currentMonth = 0;
+    currentYear++;
+  }
+  renderCalendar();
+  loadEvents();
+};
+
+$('#today-btn').onclick = () => {
+  currentYear = new Date().getFullYear();
+  currentMonth = new Date().getMonth();
+  selectedDate = new Date();
+  renderCalendar();
+  loadEvents();
+};
+
+// 年月选择器
+function populateYearMonth() {
+  const yearSelect = $('#year-select');
+  const monthSelect = $('#month-select');
+  const currentYear = new Date().getFullYear();
+  
+  yearSelect.innerHTML = '';
+  for (let y = currentYear - 5; y <= currentYear + 5; y++) {
+    yearSelect.innerHTML += `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}年</option>`;
+  }
+  
+  monthSelect.innerHTML = '';
+  for (let m = 0; m < 12; m++) {
+    monthSelect.innerHTML += `<option value="${m}" ${m === new Date().getMonth() ? 'selected' : ''}>${m + 1}月</option>`;
+  }
+}
+
+yearSelect.onchange = () => {
+  currentYear = parseInt(yearSelect.value);
+  renderCalendar();
+  loadEvents();
+};
+
+monthSelect.onchange = () => {
+  currentMonth = parseInt(monthSelect.value);
+  renderCalendar();
+  loadEvents();
+};
+
+$('#calendar-filter').onchange = loadEvents;
+$('#search-input').oninput = loadEvents;
+
+// 返回控制台
+$('#back-btn').onclick = () => {
+  window.location.href = '/';
+};
+
+// 初始化
+populateYearMonth();
+renderCalendar();
+loadCalendars();
+loadEvents();
+</script>
+</body>
+</html>

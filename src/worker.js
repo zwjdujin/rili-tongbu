@@ -499,6 +499,60 @@ async function handleRequest(request, env) {
         return json({ ok: true, deleted_events: evs.results.length });
       }
 
+      // ---- 事件增删改查 ----
+      if (path === '/api/events' && method === 'POST') {
+        const event = JSON.parse(req.body);
+        const ts = now();
+        const id = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO events (id, calendar_id, title, start_at, end_at, all_day, location, description, reminder_minutes, recurrence, color, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(id, event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, event.color || '#3b82f6', ts).run();
+        await env.DB.prepare('INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)').bind('admin', id, 'upsert', ts).run();
+        return json({ ok: true, id });
+      }
+      if (path.startsWith('/api/events/') && method === 'GET') {
+        const id = decodeURIComponent(path.split('/')[3]);
+        const event = await env.DB.prepare('SELECT * FROM events WHERE id = ? AND deleted = 0').bind(id).first();
+        if (!event) return json({ error: 'not found' }, 404);
+        return json({ event });
+      }
+      if (path.startsWith('/api/events/') && method === 'PUT') {
+        const id = decodeURIComponent(path.split('/')[3]);
+        const event = JSON.parse(req.body);
+        const ts = now();
+        await env.DB.prepare(`
+          UPDATE events SET calendar_id = ?, title = ?, start_at = ?, end_at = ?, all_day = ?, location = ?, description = ?, reminder_minutes = ?, recurrence = ?, color = ?, updated_at = ? WHERE id = ? AND deleted = 0
+        `).bind(event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, event.color || '#3b82f6', ts, id).run();
+        await env.DB.prepare('INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)').bind('admin', id, 'upsert', ts).run();
+        return json({ ok: true });
+      }
+      if (path.startsWith('/api/events/') && method === 'DELETE') {
+        const id = decodeURIComponent(path.split('/')[3]);
+        const ts = now();
+        await env.DB.prepare('UPDATE events SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0').bind(ts, id).run();
+        await env.DB.prepare('INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)').bind('admin', id, 'delete', ts).run();
+        return json({ ok: true });
+      }
+      if (path === '/api/events' && method === 'GET') {
+        const url = new URL(req.url);
+        const calendar_id = url.searchParams.get('calendar_id');
+        const search = url.searchParams.get('search');
+        let query = 'SELECT e.*, c.name as calendar_name, c.color as calendar_color FROM events e LEFT JOIN calendars c ON e.calendar_id = c.id WHERE e.deleted = 0';
+        const params = [];
+        if (calendar_id) {
+          query += ' AND e.calendar_id = ?';
+          params.push(calendar_id);
+        }
+        if (search) {
+          query += ' AND (e.title LIKE ? OR e.description LIKE ?)';
+          params.push(`%${search}%`, `%${search}%`);
+        }
+        query += ' ORDER BY e.start_at DESC';
+        const { results } = await env.DB.prepare(query).bind(...params).all();
+        return json({ events: results });
+      }
+
       // ---- 全量事件列表 ----
       if (path === '/api/events' && method === 'GET') {
         const rows = await env.DB.prepare('SELECT * FROM events WHERE deleted = 0 ORDER BY start_at ASC').all();

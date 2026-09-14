@@ -54,7 +54,7 @@
 <body>
   <div id="login-view" class="login">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu v0.0.6 — 华为 / iOS / Windows 日历数据同步</p>
+    <p class="sub">rili-tongbu v0.0.7 — 华为 / iOS / Windows 日历数据同步</p>
     <div class="card">
       <h2>管理员登录</h2>
       <input id="admin-user" type="text" placeholder="账号（默认 admin）" />
@@ -69,7 +69,7 @@
 
   <div id="app-view" style="display:none">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu <span id="version">v0.0.6</span> ·
+    <p class="sub">rili-tongbu <span id="version">v0.0.7</span> ·
       <button class="ghost" id="logout-btn" style="padding:4px 10px;font-size:12px">退出</button>
     </p>
 
@@ -110,6 +110,9 @@
     <div class="card">
       <h2>事件总览</h2>
       <p class="muted" id="events-count">—</p>
+      <div style="margin-bottom:12px">
+        <a href="/events.html" class="ghost" style="text-decoration:none;color:var(--accent);font-size:14px">📅 进入事件总览（月历视图 + 事件管理）</a>
+      </div>
       <table id="events-table">
         <thead><tr><th>标题</th><th>开始</th><th>结束</th><th>日历</th></tr></thead>
         <tbody></tbody>
@@ -136,6 +139,7 @@
         ② iOS / Windows：在日历应用中「添加订阅的日历」，地址
         <code id="ics-url">https://&lt;你的域名&gt;/api/calendar.ics?token=设备Token</code><br />
         ③ 华为手机：日历 App 支持通过「订阅日历 / 导入 .ics」接入同一地址。<br />
+        ④ 事件管理：可进入 <a href="/events.html" style="color:var(--accent)">事件总览页面</a> 进行可视化编辑。<br />
         详细 API 见仓库 README。
       </p>
     </div>

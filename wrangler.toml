@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 directory = "./public"
 
 [vars]
-VERSION = "0.0.4"
+VERSION = "0.0.5"
 # 管理员账号（密码请用 Secret 配置：wrangler secret put ADMIN_PASSWORD
 # 或在 Worker 设置 → 变量中添加 Secret）
 ADMIN_USER = "admin"

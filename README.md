@@ -2,7 +2,7 @@
 
 跨终端日历数据备份与同步平台：华为、iOS、Windows 及其他终端的日历数据，通过统一的同步平台保持实时一致。任意终端新增 / 修改 / 删除日历事件后，其他绑定的终端立即拉取到相同变更。
 
-- 当前版本：**v0.0.4**（版本规则见下文）
+- 当前版本：**v0.0.5**（版本规则见下文）
 - 技术栈：Cloudflare Workers（API + 静态页面）+ D1（关系数据）+ R2（备份快照）
 - 部署方式：Cloudflare 控制台绑定 GitHub 仓库，push 后自动部署
 
@@ -49,7 +49,7 @@
    - **D1 / R2 名称**：Worker 代码只依赖绑定名 `DB` 和 `BUCKET`，与资源名称无关。想换其他 D1 / R2 资源，改 `wrangler.toml` 中的 `database_name` / `database_id` / `bucket_name`，或直接在 Worker 的「设置 → 绑定」中修改（控制台会自动同步回仓库配置）。
    - **管理员账号**：部署变量 `ADMIN_USER`（默认 `admin`），在 `wrangler.toml` 或 Worker 设置 → 变量中修改。
    - **管理员密码**：Secret `ADMIN_PASSWORD`，在 Worker 的「设置 → 变量和机密」中添加（Secret 不会被仓库配置覆盖）。
-3. **首次部署会自动创建表结构**：无需手动执行 SQL，Worker 启动时会自动创建 `devices`、`events`、`sessions` 三个表。
+3. **首次部署会自动创建表结构**：无需手动执行 SQL，Worker 启动时会自动创建 `devices`、`calendars`、`events`、`change_log`、`backups`、`sessions` 六个表。
 4. 之后每次 push 到 `main` 自动重新部署。
 
 ### 方式二：命令行
@@ -102,7 +102,20 @@ curl -X POST https://<你的域名>/api/sync \
 - 终端本地保存返回的 `cursor`，下次同步带上，即可只拉取增量。
 - 推送的事件需带客户端生成的唯一 `id` 与本地修改时间 `updated_at`。
 
-### 3. ICS 订阅（iOS / Windows / 华为）
+### 3. CalDAV 双向同步（iPhone 推荐）
+
+iPhone 原生支持 CalDAV，绑定设备后即可双向实时同步：
+
+1. 在管理控制台绑定 iOS 设备，获取设备 Token；
+2. iPhone：**设置 → 日历 → 账户 → 添加账户 → 其他 → 添加 CalDAV 账户**：
+   - 服务器：`rili-tongbu.dujingd.workers.dev`（换成你的域名）
+   - 用户名：任意（如 `rili`）
+   - 密码：设备 Token
+3. 保存后，日历 App 会出现平台日历；在手机上新建/修改/删除事件会实时推送到平台，平台上的变更也会实时同步回手机。
+
+> 说明：CalDAV 与 ICS 订阅建议二选一（订阅日历只读，两者同用会出现重复视图）。非 UTC 时间按北京时间（UTC+8）解析。Windows 也可通过支持 CalDAV 的客户端接入。
+
+### 4. ICS 订阅（华为 / Windows / 只读场景）
 
 在日历应用中「添加订阅的日历」，地址：
 
@@ -134,9 +147,8 @@ https://<你的域名>/api/calendar.ics?token=<设备Token或ADMIN_TOKEN>
 ```
 rili-tongbu/
 ├── src/worker.js            # Worker：API + 路由
+├── src/caldav.js            # CalDAV 服务端（iPhone 等双向同步）
 ├── public/index.html        # 管理控制台（单页）
-├── migrations/0001_init.sql # D1 表结构
-├── migrations/0002_sessions.sql # 管理员登录会话
 ├── wrangler.toml            # Cloudflare 配置（D1 / R2 / 版本号 / ADMIN_USER）
 ├── VERSION                  # 当前版本号
 └── .github/workflows/deploy.yml  # 手动备用部署

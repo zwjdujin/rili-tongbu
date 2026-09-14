@@ -1,8 +1,11 @@
 /**
- * rili-tongbu 日历同步平台 v0.0.1
- * Cloudflare Worker：API + 静态资源（public/）
+ * rili-tongbu 日历同步平台
+ * Cloudflare Worker：API + CalDAV + 静态资源（public/）
  * 绑定：D1 (env.DB) / R2 (env.BUCKET)
  */
+import { handleCaldav } from './caldav.js';
+
+const CALDAV_METHODS = ['PROPFIND', 'REPORT', 'PROPPATCH', 'MKCALENDAR', 'MOVE', 'COPY'];
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
@@ -372,6 +375,11 @@ async function handleRequest(request, env) {
   // 站点图标（无资源，返回空响应避免 500）
   if (path === '/favicon.ico') {
     return new Response(null, { status: 204 });
+  }
+
+  // CalDAV：iPhone / Windows / DAVx⁵ 原生双向同步
+  if (path === '/.well-known/caldav' || path.startsWith('/caldav') || CALDAV_METHODS.includes(method)) {
+    return handleCaldav(request, env);
   }
 
   // 健康检查 / 版本 / 数据库状态（用于远程排障）

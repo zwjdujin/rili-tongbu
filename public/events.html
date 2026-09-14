@@ -231,16 +231,21 @@ function getLunarDate(date) {
   const lunarDays = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十',
                     '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
                     '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
-  // 实际项目建议使用成熟的 lunar 库，这里简化处理
-  return { month: lunarMonths[0], day: lunarDays[0] };
+  
+  // 这里使用简化的农历计算，实际项目中建议使用成熟的 lunar 库
+  // 当前为演示使用，显示固定的农历日期
+  const monthIndex = Math.floor((date.getMonth() + 9) % 12);
+  const dayIndex = Math.min(date.getDate() - 1, lunarDays.length - 1);
+  
+  return { month: lunarMonths[monthIndex], day: lunarDays[dayIndex] };
 }
 
 function formatDate(date) {
-  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 }
 
 function renderCalendar() {
-  const grid = $('#calendar-grid');
+  const grid = document.getElementById('calendar-grid');
   const year = currentYear;
   const month = currentMonth;
   const firstDay = new Date(year, month, 1);
@@ -292,7 +297,7 @@ function renderCalendar() {
   }
   
   grid.innerHTML = html;
-  $('#current-month').textContent = `${year}年${month + 1}月`;
+  document.getElementById('current-month').textContent = `${year}年${month + 1}月`;
   
   // 绑定日期点击
   grid.querySelectorAll('.calendar-day:not(.other-month)').forEach(day => {
@@ -305,69 +310,83 @@ function renderCalendar() {
 }
 
 async function loadCalendars() {
-  const { calendars } = await api('/api/calendars');
-  const filter = $('#calendar-filter');
-  filter.innerHTML = '<option value="">全部日历</option>' + 
-    calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-  const modalCalendar = $('#event-calendar');
-  modalCalendar.innerHTML = calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  try {
+    const { calendars } = await api('/api/calendars');
+    const filter = document.getElementById('calendar-filter');
+    filter.innerHTML = '<option value="">全部日历</option>' + 
+      calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    const modalCalendar = document.getElementById('event-calendar');
+    modalCalendar.innerHTML = calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  } catch (error) {
+    console.error('加载日历失败:', error);
+    const filter = document.getElementById('calendar-filter');
+    filter.innerHTML = '<option value="">加载失败</option>';
+    const modalCalendar = document.getElementById('event-calendar');
+    modalCalendar.innerHTML = '<option value="">加载失败</option>';
+  }
 }
 
 async function loadEvents() {
-  const filter = $('#calendar-filter').value;
-  const search = $('#search-input').value;
+  const filter = document.getElementById('calendar-filter').value;
+  const search = document.getElementById('search-input').value;
   let url = '/api/events';
   const params = new URLSearchParams();
   if (filter) params.append('calendar_id', filter);
   if (search) params.append('search', search);
   if (params.toString()) url += '?' + params;
   
-  const { events } = await api(url);
-  const tbody = $('#events-table tbody');
-  tbody.innerHTML = events.slice(0, 100).map(e => {
-    const startDate = new Date(e.start_at);
-    const endDate = new Date(e.end_at);
-    const startStr = e.all_day 
-      ? startDate.toLocaleDateString('zh-CN')
-      : startDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const endStr = e.all_day 
-      ? endDate.toLocaleDateString('zh-CN')
-      : endDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  try {
+    const { events } = await api(url);
+    const tbody = document.getElementById('events-table').querySelector('tbody');
+    tbody.innerHTML = events.slice(0, 100).map(e => {
+      const startDate = new Date(e.start_at);
+      const endDate = new Date(e.end_at);
+      const startStr = e.all_day 
+        ? startDate.toLocaleDateString('zh-CN')
+        : startDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const endStr = e.all_day 
+        ? endDate.toLocaleDateString('zh-CN')
+        : endDate.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      
+      return `<tr>
+        <td>${e.title}</td>
+        <td>${startStr} ${!e.all_day ? '-' + endStr : ''}</td>
+        <td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${e.calendar_color || '#3b82f6'}"></span> ${e.calendar_name}</td>
+        <td><button class="danger" style="padding:3px 8px;font-size:12px" data-id="${e.id}">删除</button></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">暂无事件</td></tr>';
     
-    return `<tr>
-      <td>${e.title}</td>
-      <td>${startStr} ${!e.all_day ? '-' + endStr : ''}</td>
-      <td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${e.calendar_color || '#3b82f6'}"></span> ${e.calendar_name}</td>
-      <td><button class="danger" style="padding:3px 8px;font-size:12px" data-id="${e.id}">删除</button></td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="4" class="muted">暂无事件</td></tr>';
-  
-  // 绑定删除按钮
-  tbody.querySelectorAll('button').forEach(btn => {
-    btn.onclick = async () => {
-      if (!confirm('确定删除此事件？')) return;
-      try {
-        await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
-        toast('事件已删除');
-        loadEvents();
-      } catch (e) { toast('删除失败：' + e.message, false); }
-    };
-  });
+    // 绑定删除按钮
+    tbody.querySelectorAll('button').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('确定删除此事件？')) return;
+        try {
+          await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
+          toast('事件已删除');
+          loadEvents();
+        } catch (e) { toast('删除失败：' + e.message, false); }
+      };
+    });
+  } catch (error) {
+    console.error('加载事件失败:', error);
+    const tbody = document.getElementById('events-table').querySelector('tbody');
+    tbody.innerHTML = '<tr><td colspan="4" class="muted">加载失败：' + error.message + '</td></tr>';
+  }
 }
 
 // 事件表单处理
 document.getElementById('event-form').onsubmit = async (e) => {
   e.preventDefault();
   const eventData = {
-    calendar_id: $('#event-calendar').value,
-    title: $('#event-title').value,
-    start_at: new Date($('#event-start').value).getTime(),
-    end_at: new Date($('#event-end').value).getTime(),
-    all_day: $('#event-allday').checked,
-    location: $('#event-location').value,
-    description: $('#event-description').value,
-    reminder_minutes: $('#event-reminder').value ? parseInt($('#event-reminder').value) : null,
-    recurrence: $('#event-recurrence').value || null,
+    calendar_id: document.getElementById('event-calendar').value,
+    title: document.getElementById('event-title').value,
+    start_at: new Date(document.getElementById('event-start').value).getTime(),
+    end_at: new Date(document.getElementById('event-end').value).getTime(),
+    all_day: document.getElementById('event-allday').checked,
+    location: document.getElementById('event-location').value,
+    description: document.getElementById('event-description').value,
+    reminder_minutes: document.getElementById('event-reminder').value ? parseInt(document.getElementById('event-reminder').value) : null,
+    recurrence: document.getElementById('event-recurrence').value || null,
   };
   
   try {
@@ -387,25 +406,25 @@ document.getElementById('event-form').onsubmit = async (e) => {
 
 function openModal(event = null) {
   editingEvent = event;
-  $('#modal-title').textContent = event ? '编辑事件' : '添加事件';
+  document.getElementById('modal-title').textContent = event ? '编辑事件' : '添加事件';
   document.getElementById('event-modal').classList.add('active');
   
   if (event) {
-    $('#event-title').value = event.title;
-    $('#event-calendar').value = event.calendar_id;
-    $('#event-start').value = new Date(event.start_at).toISOString().slice(0, 16);
-    $('#event-end').value = new Date(event.end_at).toISOString().slice(0, 16);
-    $('#event-allday').checked = event.all_day;
-    $('#event-location').value = event.location || '';
-    $('#event-description').value = event.description || '';
-    $('#event-reminder').value = event.reminder_minutes || '';
-    $('#event-recurrence').value = event.recurrence || '';
+    document.getElementById('event-title').value = event.title;
+    document.getElementById('event-calendar').value = event.calendar_id;
+    document.getElementById('event-start').value = new Date(event.start_at).toISOString().slice(0, 16);
+    document.getElementById('event-end').value = new Date(event.end_at).toISOString().slice(0, 16);
+    document.getElementById('event-allday').checked = event.all_day;
+    document.getElementById('event-location').value = event.location || '';
+    document.getElementById('event-description').value = event.description || '';
+    document.getElementById('event-reminder').value = event.reminder_minutes || '';
+    document.getElementById('event-recurrence').value = event.recurrence || '';
   } else {
     document.getElementById('event-form').reset();
     if (selectedDate) {
       const date = new Date(selectedDate);
-      $('#event-start').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0).toISOString().slice(0, 16);
-      $('#event-end').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0).toISOString().slice(0, 16);
+      document.getElementById('event-start').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0).toISOString().slice(0, 16);
+      document.getElementById('event-end').value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0).toISOString().slice(0, 16);
     }
   }
 }
@@ -444,9 +463,15 @@ document.getElementById('next-month').onclick = () => {
 };
 
 document.getElementById('today-btn').onclick = () => {
-  currentYear = new Date().getFullYear();
-  currentMonth = new Date().getMonth();
-  selectedDate = new Date();
+  const today = new Date();
+  currentYear = today.getFullYear();
+  currentMonth = today.getMonth();
+  selectedDate = today;
+  
+  // 更新年月选择器
+  document.getElementById('year-select').value = currentYear;
+  document.getElementById('month-select').value = currentMonth;
+  
   renderCalendar();
   loadEvents();
 };

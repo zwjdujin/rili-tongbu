@@ -416,14 +416,14 @@ function closeModal() {
 }
 
 // 事件绑定
-$('#add-event-btn').onclick = () => openModal();
-$('#close-modal').onclick = closeModal;
-$('#cancel-btn').onclick = closeModal;
+document.getElementById('add-event-btn').onclick = () => openModal();
+document.getElementById('close-modal').onclick = closeModal;
+document.getElementById('cancel-btn').onclick = closeModal;
 document.getElementById('event-modal').onclick = (e) => {
   if (e.target.id === 'event-modal') closeModal();
 };
 
-$('#prev-month').onclick = () => {
+document.getElementById('prev-month').onclick = () => {
   currentMonth--;
   if (currentMonth < 0) {
     currentMonth = 11;
@@ -433,7 +433,7 @@ $('#prev-month').onclick = () => {
   loadEvents();
 };
 
-$('#next-month').onclick = () => {
+document.getElementById('next-month').onclick = () => {
   currentMonth++;
   if (currentMonth > 11) {
     currentMonth = 0;
@@ -443,7 +443,7 @@ $('#next-month').onclick = () => {
   loadEvents();
 };
 
-$('#today-btn').onclick = () => {
+document.getElementById('today-btn').onclick = () => {
   currentYear = new Date().getFullYear();
   currentMonth = new Date().getMonth();
   selectedDate = new Date();
@@ -453,8 +453,8 @@ $('#today-btn').onclick = () => {
 
 // 年月选择器
 function populateYearMonth() {
-  const yearSelect = $('#year-select');
-  const monthSelect = $('#month-select');
+  const yearSelect = document.getElementById('year-select');
+  const monthSelect = document.getElementById('month-select');
   const currentYear = new Date().getFullYear();
   
   yearSelect.innerHTML = '';
@@ -468,23 +468,23 @@ function populateYearMonth() {
   }
 }
 
-yearSelect.onchange = () => {
-  currentYear = parseInt(yearSelect.value);
+document.getElementById('year-select').onchange = () => {
+  currentYear = parseInt(document.getElementById('year-select').value);
   renderCalendar();
   loadEvents();
 };
 
-monthSelect.onchange = () => {
-  currentMonth = parseInt(monthSelect.value);
+document.getElementById('month-select').onchange = () => {
+  currentMonth = parseInt(document.getElementById('month-select').value);
   renderCalendar();
   loadEvents();
 };
 
-$('#calendar-filter').onchange = loadEvents;
-$('#search-input').oninput = loadEvents;
+document.getElementById('calendar-filter').onchange = loadEvents;
+document.getElementById('search-input').oninput = loadEvents;
 
 // 返回控制台
-$('#back-btn').onclick = () => {
+document.getElementById('back-btn').onclick = () => {
   window.location.href = '/';
 };
 

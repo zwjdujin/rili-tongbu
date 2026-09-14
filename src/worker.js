@@ -35,57 +35,91 @@ async function authenticate(request, env) {
   return device || null;
 }
 
-/** 自动初始化 D1 表结构 */
+/** 自动初始化 D1 表结构（完整 schema，含旧结构自愈） */
 async function initDatabase(env) {
-  const tables = await env.DB.prepare(`
-    SELECT name FROM sqlite_master WHERE type='table'
-  `).all();
-  
-  const existingTables = tables.results.map(t => t.name);
-  
-  // 创建设备表
-  if (!existingTables.includes('devices')) {
-    await env.DB.prepare(`
-      CREATE TABLE devices (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        last_sync INTEGER
-      )
-    `).run();
+  const tables = await env.DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table'"
+  ).all();
+  const have = new Set(tables.results.map((t) => t.name));
+
+  // 旧版/简化版表结构检测：列不匹配则重建（部署初期无数据，可安全重建）
+  for (const [table, requiredCol] of [
+    ['devices', 'last_seen'],
+    ['events', 'start_at'],
+  ]) {
+    if (have.has(table)) {
+      const cols = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+      const names = cols.results.map((c) => c.name);
+      if (!names.includes(requiredCol)) {
+        await env.DB.prepare(`DROP TABLE ${table}`).run();
+        have.delete(table);
+      }
+    }
   }
-  
-  // 创建事件表
-  if (!existingTables.includes('events')) {
-    await env.DB.prepare(`
-      CREATE TABLE events (
-        id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL,
-        calendar_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        start INTEGER NOT NULL,
-        end INTEGER NOT NULL,
-        all_day INTEGER,
-        location TEXT,
-        description TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (device_id) REFERENCES devices(id)
-      )
-    `).run();
+
+  const stmts = [];
+  if (!have.has('devices')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE devices (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      last_seen INTEGER
+    )`));
   }
-  
-  // 创建会话表
-  if (!existingTables.includes('sessions')) {
-    await env.DB.prepare(`
-      CREATE TABLE sessions (
-        token TEXT PRIMARY KEY,
-        created_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL
-      )
-    `).run();
+  if (!have.has('calendars')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE calendars (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#3b82f6',
+      created_at INTEGER NOT NULL
+    )`));
   }
+  if (!have.has('events')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE events (
+      id TEXT PRIMARY KEY,
+      calendar_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      location TEXT DEFAULT '',
+      start_at INTEGER NOT NULL,
+      end_at INTEGER NOT NULL,
+      all_day INTEGER NOT NULL DEFAULT 0,
+      reminder_minutes INTEGER,
+      recurrence TEXT,
+      updated_at INTEGER NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT
+    )`));
+  }
+  if (!have.has('change_log')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE change_log (
+      log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id TEXT,
+      event_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      changed_at INTEGER NOT NULL
+    )`));
+  }
+  if (!have.has('backups')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE backups (
+      key TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      event_count INTEGER NOT NULL,
+      size_bytes INTEGER NOT NULL
+    )`));
+  }
+  if (!have.has('sessions')) {
+    stmts.push(env.DB.prepare(`CREATE TABLE sessions (
+      token TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    )`));
+  }
+  stmts.push(env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_events_calendar ON events(calendar_id)'));
+  stmts.push(env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_events_updated ON events(updated_at)'));
+  await env.DB.batch(stmts);
 }
 
 function isAdmin(auth) {
@@ -317,13 +351,45 @@ async function restoreBackup(env, key) {
 }
 
 export default {
-  async fetch(request, env, ctx) {
-    // 初始化数据库表（首次运行时自动创建）
-    await initDatabase(env).catch(console.error);
-    
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
+  async fetch(request, env) {
+    try {
+      return await handleRequest(request, env);
+    } catch (e) {
+      // 返回具体错误信息，便于部署排障
+      return json({ error: 'server error', detail: String(e.message || e) }, 500);
+    }
+  },
+};
+
+async function handleRequest(request, env) {
+  // 初始化数据库表（幂等，每次请求前确保表存在）
+  await initDatabase(env);
+
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
+
+  // 站点图标（无资源，返回空响应避免 500）
+  if (path === '/favicon.ico') {
+    return new Response(null, { status: 204 });
+  }
+
+  // 健康检查 / 版本 / 数据库状态（用于远程排障）
+  if (path === '/api/health') {
+    let db = { ok: true, tables: [] };
+    try {
+      const r = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      db.tables = r.results.map((t) => t.name);
+    } catch (e) {
+      db = { ok: false, error: String(e.message || e) };
+    }
+    return json({
+      ok: true,
+      version: env.VERSION || '0.0.1',
+      db,
+      admin_password_configured: !!env.ADMIN_PASSWORD,
+    });
+  }
 
     // 管理员登录（账号 + 密码，签发 7 天会话）
     if (path === '/api/login' && method === 'POST') {
@@ -343,11 +409,6 @@ export default {
           .bind(token, now(), expiresAt),
       ]);
       return json({ token, expires_at: expiresAt });
-    }
-
-    // 健康检查 / 版本
-    if (path === '/api/health') {
-      return json({ ok: true, version: env.VERSION || '0.0.1' });
     }
 
     // ICS 订阅：用设备 token 或管理员 token 作为查询参数
@@ -457,5 +518,4 @@ export default {
 
     // 非 /api 路径交给静态资源（public/）
     return env.ASSETS.fetch(request);
-  },
-};
+}

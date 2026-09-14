@@ -503,11 +503,11 @@ async function handleRequest(request, env) {
       if (path === '/api/events' && method === 'POST') {
         const event = JSON.parse(req.body);
         const ts = now();
-        const id = crypto.randomUUID();
+        const id = uuid();
         await env.DB.prepare(`
-          INSERT INTO events (id, calendar_id, title, start_at, end_at, all_day, location, description, reminder_minutes, recurrence, color, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(id, event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, event.color || '#3b82f6', ts).run();
+          INSERT INTO events (id, calendar_id, title, start_at, end_at, all_day, location, description, reminder_minutes, recurrence, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(id, event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, ts).run();
         await env.DB.prepare('INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)').bind('admin', id, 'upsert', ts).run();
         return json({ ok: true, id });
       }
@@ -522,8 +522,8 @@ async function handleRequest(request, env) {
         const event = JSON.parse(req.body);
         const ts = now();
         await env.DB.prepare(`
-          UPDATE events SET calendar_id = ?, title = ?, start_at = ?, end_at = ?, all_day = ?, location = ?, description = ?, reminder_minutes = ?, recurrence = ?, color = ?, updated_at = ? WHERE id = ? AND deleted = 0
-        `).bind(event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, event.color || '#3b82f6', ts, id).run();
+          UPDATE events SET calendar_id = ?, title = ?, start_at = ?, end_at = ?, all_day = ?, location = ?, description = ?, reminder_minutes = ?, recurrence = ?, updated_at = ? WHERE id = ? AND deleted = 0
+        `).bind(event.calendar_id, event.title, event.start_at, event.end_at, event.all_day ? 1 : 0, event.location || null, event.description || null, event.reminder_minutes || null, event.recurrence || null, ts, id).run();
         await env.DB.prepare('INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)').bind('admin', id, 'upsert', ts).run();
         return json({ ok: true });
       }

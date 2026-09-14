@@ -224,7 +224,7 @@ async function api(path, opts = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opts.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.status);
+  if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
 
@@ -314,16 +314,7 @@ function renderCalendar() {
 
 async function loadCalendars() {
   try {
-    const res = await fetch('/api/calendars', {
-      headers: { 'Authorization': 'Bearer ' + TOKEN }
-    });
-    
-    if (!res.ok) {
-      throw new Error(`服务器错误: ${res.status}`);
-    }
-    
-    const data = await res.json();
-    const { calendars } = data;
+    const { calendars } = await api('/api/calendars');
     const filter = document.getElementById('calendar-filter');
     filter.innerHTML = '<option value="">全部日历</option>' + 
       calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -348,16 +339,7 @@ async function loadEvents() {
   if (params.toString()) url += '?' + params;
   
   try {
-    const res = await fetch(url, {
-      headers: { 'Authorization': 'Bearer ' + TOKEN }
-    });
-    
-    if (!res.ok) {
-      throw new Error(`服务器错误: ${res.status} ${res.statusText}`);
-    }
-    
-    const data = await res.json();
-    const { events } = data;
+    const { events } = await api(url);
     const tbody = document.getElementById('events-table').querySelector('tbody');
     tbody.innerHTML = events.slice(0, 100).map(e => {
       const startDate = new Date(e.start_at);
@@ -382,15 +364,7 @@ async function loadEvents() {
       btn.onclick = async () => {
         if (!confirm('确定删除此事件？')) return;
         try {
-          const deleteRes = await fetch('/api/events/' + btn.dataset.id, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + TOKEN }
-          });
-          
-          if (!deleteRes.ok) {
-            throw new Error(`删除失败: ${deleteRes.status}`);
-          }
-          
+          await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
           toast('事件已删除');
           loadEvents();
         } catch (e) { 

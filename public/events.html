@@ -14,17 +14,17 @@
     body {
       font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
       background: var(--bg); color: var(--text); min-height: 100vh;
-      padding: 24px 16px; max-width: 960px; margin: 0 auto;
+      padding: 16px 12px; max-width: 960px; margin: 0 auto;
     }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    h1 { font-size: 20px; margin-bottom: 2px; }
+    .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
     .card {
       background: var(--card); border: 1px solid var(--border);
-      border-radius: 10px; padding: 16px; margin-bottom: 16px;
+      border-radius: 8px; padding: 12px; margin-bottom: 12px;
     }
-    .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+    .card h2 { font-size: 14px; margin-bottom: 8px; color: var(--accent); }
     input, select, button, textarea {
-      font-size: 14px; padding: 8px 10px; border-radius: 6px;
+      font-size: 13px; padding: 6px 8px; border-radius: 4px;
       border: 1px solid var(--border); background: var(--bg); color: var(--text);
       outline: none;
     }
@@ -35,10 +35,10 @@
     button:disabled { opacity: .5; cursor: not-allowed; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
     .row label { flex: 0 0 80px; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; }
-    .muted { color: var(--muted); font-size: 12px; }
+    .muted { color: var(--muted); font-size: 11px; }
     .ok { color: var(--ok); } .err { color: var(--err); }
     #toast {
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -49,20 +49,23 @@
     .calendar-nav button { padding: 4px 8px; font-size: 12px; }
     .calendar-grid {
       display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
+      max-height: 300px;
+      overflow: hidden;
     }
     .calendar-header { color: var(--muted); font-size: 12px; text-align: center; padding: 4px; }
     .calendar-day {
       aspect-ratio: 1; border: 1px solid var(--border); border-radius: 4px;
-      padding: 4px; cursor: pointer; position: relative;
+      padding: 2px; cursor: pointer; position: relative;
       display: flex; flex-direction: column; align-items: center;
-      transition: all .2s;
+      justify-content: center; transition: all .2s;
+      font-size: 12px;
     }
     .calendar-day:hover { background: var(--bg); }
     .calendar-day.today { border: 1px solid var(--accent); }
     .calendar-day.other-month { color: var(--muted); opacity: .5; }
     .calendar-day.selected { background: var(--accent); }
-    .lunar { font-size: 10px; line-height: 1.2; color: var(--muted); }
+    .lunar { font-size: 9px; line-height: 1.2; color: var(--muted); }
     .event-dot {
       position: absolute; bottom: 2px; width: 4px; height: 4px;
       background: var(--accent); border-radius: 50%;
@@ -311,7 +314,16 @@ function renderCalendar() {
 
 async function loadCalendars() {
   try {
-    const { calendars } = await api('/api/calendars');
+    const res = await fetch('/api/calendars', {
+      headers: { 'Authorization': 'Bearer ' + TOKEN }
+    });
+    
+    if (!res.ok) {
+      throw new Error(`服务器错误: ${res.status}`);
+    }
+    
+    const data = await res.json();
+    const { calendars } = data;
     const filter = document.getElementById('calendar-filter');
     filter.innerHTML = '<option value="">全部日历</option>' + 
       calendars.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -336,7 +348,16 @@ async function loadEvents() {
   if (params.toString()) url += '?' + params;
   
   try {
-    const { events } = await api(url);
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + TOKEN }
+    });
+    
+    if (!res.ok) {
+      throw new Error(`服务器错误: ${res.status} ${res.statusText}`);
+    }
+    
+    const data = await res.json();
+    const { events } = data;
     const tbody = document.getElementById('events-table').querySelector('tbody');
     tbody.innerHTML = events.slice(0, 100).map(e => {
       const startDate = new Date(e.start_at);
@@ -351,8 +372,8 @@ async function loadEvents() {
       return `<tr>
         <td>${e.title}</td>
         <td>${startStr} ${!e.all_day ? '-' + endStr : ''}</td>
-        <td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${e.calendar_color || '#3b82f6'}"></span> ${e.calendar_name}</td>
-        <td><button class="danger" style="padding:3px 8px;font-size:12px" data-id="${e.id}">删除</button></td>
+        <td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${e.calendar_color || '#3b82f6'}"></span> ${e.calendar_name}</td>
+        <td><button class="danger" style="padding:2px 6px;font-size:11px" data-id="${e.id}">删除</button></td>
       </tr>`;
     }).join('') || '<tr><td colspan="4" class="muted">暂无事件</td></tr>';
     
@@ -361,10 +382,20 @@ async function loadEvents() {
       btn.onclick = async () => {
         if (!confirm('确定删除此事件？')) return;
         try {
-          await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
+          const deleteRes = await fetch('/api/events/' + btn.dataset.id, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + TOKEN }
+          });
+          
+          if (!deleteRes.ok) {
+            throw new Error(`删除失败: ${deleteRes.status}`);
+          }
+          
           toast('事件已删除');
           loadEvents();
-        } catch (e) { toast('删除失败：' + e.message, false); }
+        } catch (e) { 
+          toast('删除失败：' + e.message, false); 
+        }
       };
     });
   } catch (error) {

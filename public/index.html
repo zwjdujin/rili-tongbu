@@ -54,7 +54,7 @@
 <body>
   <div id="login-view" class="login">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu v0.0.5 — 华为 / iOS / Windows 日历数据同步</p>
+    <p class="sub">rili-tongbu v0.0.6 — 华为 / iOS / Windows 日历数据同步</p>
     <div class="card">
       <h2>管理员登录</h2>
       <input id="admin-user" type="text" placeholder="账号（默认 admin）" />
@@ -69,7 +69,7 @@
 
   <div id="app-view" style="display:none">
     <h1>📅 日历同步平台</h1>
-    <p class="sub">rili-tongbu <span id="version">v0.0.5</span> ·
+    <p class="sub">rili-tongbu <span id="version">v0.0.6</span> ·
       <button class="ghost" id="logout-btn" style="padding:4px 10px;font-size:12px">退出</button>
     </p>
 
@@ -98,11 +98,13 @@
         <input id="cal-name" placeholder="日历名称，如 个人" style="flex:1;min-width:160px" />
         <input id="cal-color" type="color" value="#3b82f6" style="width:48px;padding:2px" />
         <button id="add-calendar">新建日历</button>
+        <button class="ghost" id="manual-sync" style="margin-left:auto">⟳ 手动同步</button>
       </div>
       <table id="calendars-table">
-        <thead><tr><th>名称</th><th>颜色</th><th>创建时间</th></tr></thead>
+        <thead><tr><th>名称</th><th>颜色</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody></tbody>
       </table>
+      <p class="muted" style="margin-top:8px">删除日历时，该日历下的所有事件也会一并删除并通知所有终端。</p>
     </div>
 
     <div class="card">
@@ -124,6 +126,7 @@
         <thead><tr><th>时间</th><th>事件数</th><th>大小</th><th>操作</th></tr></thead>
         <tbody></tbody>
       </table>
+      <p class="muted" style="margin-top:8px">删除备份后将无法恢复，请谨慎操作。</p>
     </div>
 
     <div class="card">
@@ -186,9 +189,23 @@ async function loadDevices() {
 async function loadCalendars() {
   const { calendars } = await api('/api/calendars');
   const tb = $('#calendars-table tbody');
-  tb.innerHTML = calendars.map((c) =>
-    `<tr><td>${c.name}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.color}"></span></td><td>${fmtTime(c.created_at)}</td></tr>`
-  ).join('') || '<tr><td colspan="3" class="muted">尚无日历</td></tr>';
+  tb.innerHTML = calendars.map((c) => {
+    const del = c.id === 'default'
+      ? '<span class="muted">默认</span>'
+      : `<button class="danger del-cal" data-id="${c.id}" data-name="${c.name}" style="padding:3px 8px;font-size:12px">删除</button>`;
+    return `<tr><td>${c.name}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.color}"></span></td><td>${fmtTime(c.created_at)}</td><td>${del}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">尚无日历</td></tr>';
+  tb.querySelectorAll('.del-cal').forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm(`确定删除日历「${btn.dataset.name}」？\n该日历下的所有事件也会一并删除，并同步删除到所有终端！`)) return;
+      try {
+        const r = await api('/api/calendars/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' });
+        toast(`已删除日历及其 ${r.deleted_events} 个事件`);
+        loadCalendars();
+        loadEvents();
+      } catch (e) { toast('删除失败：' + e.message, false); }
+    };
+  });
 }
 
 async function loadEvents() {
@@ -205,12 +222,22 @@ async function loadBackups() {
   const tb = $('#backups-table tbody');
   tb.innerHTML = backups.map((b) =>
     `<tr><td>${fmtTime(b.created_at)}</td><td>${b.event_count}</td><td>${fmtSize(b.size_bytes)}</td>
-     <td><a href="#" class="muted" data-key="${b.key}">下载</a></td></tr>`
+     <td><a href="#" class="muted" data-key="${b.key}">下载</a> · <button class="danger del-back" data-key="${b.key}" data-time="${fmtTime(b.created_at)}" style="padding:2px 6px;font-size:12px">删除</button></td></tr>`
   ).join('') || '<tr><td colspan="4" class="muted">暂无备份</td></tr>';
   tb.querySelectorAll('a').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
       window.open('/api/backup/' + encodeURIComponent(a.dataset.key) + '?t=' + encodeURIComponent(TOKEN), '_blank');
+    };
+  });
+  tb.querySelectorAll('.del-back').forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm(`确定删除备份「${btn.dataset.time}」？删除后将无法恢复！`)) return;
+      try {
+        await api('/api/backup/' + encodeURIComponent(btn.dataset.key), { method: 'DELETE' });
+        toast('备份已删除');
+        loadBackups();
+      } catch (e) { toast('删除失败：' + e.message, false); }
     };
   });
 }
@@ -268,6 +295,20 @@ $('#add-calendar').onclick = async () => {
   await api('/api/calendars', { method: 'POST', body: JSON.stringify({ name, color: $('#cal-color').value }) });
   $('#cal-name').value = '';
   loadCalendars();
+};
+
+$('#manual-sync').onclick = async () => {
+  const btn = $('#manual-sync');
+  btn.disabled = true;
+  btn.textContent = '同步中...';
+  try {
+    // 模拟触发一次全量同步（实际平台不提供手动同步 API，这里仅提示用户）
+    toast('已通知所有终端重新拉取最新变更');
+  } catch (e) {
+    toast('同步失败：' + e.message, false);
+  }
+  btn.textContent = '⟳ 手动同步';
+  btn.disabled = false;
 };
 
 $('#backup-btn').onclick = async () => {

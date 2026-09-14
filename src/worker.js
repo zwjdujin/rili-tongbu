@@ -474,6 +474,31 @@ async function handleRequest(request, env) {
         return json({ id, name: body.name, color: body.color || '#3b82f6' });
       }
 
+      if (path.startsWith('/api/calendars/') && method === 'DELETE') {
+        const id = decodeURIComponent(path.split('/')[3]);
+        if (id === 'default') return json({ error: '默认日历不可删除' }, 400);
+        const cal = await env.DB.prepare('SELECT id FROM calendars WHERE id = ?').bind(id).first();
+        if (!cal) return json({ error: '日历不存在' }, 404);
+        const ts = now();
+        // 该日历下的未删除事件一并软删除，并记入变更日志供其他终端拉取
+        const evs = await env.DB.prepare(
+          'SELECT id FROM events WHERE calendar_id = ? AND deleted = 0'
+        ).bind(id).all();
+        const stmts = evs.results.map((e) =>
+          env.DB.prepare(
+            "UPDATE events SET deleted = 1, updated_at = ?, updated_by = 'admin' WHERE id = ?"
+          ).bind(ts, e.id)
+        );
+        for (const e of evs.results) {
+          stmts.push(env.DB.prepare(
+            'INSERT INTO change_log (device_id, event_id, op, changed_at) VALUES (?, ?, ?, ?)'
+          ).bind('admin', e.id, 'delete', ts));
+        }
+        stmts.push(env.DB.prepare('DELETE FROM calendars WHERE id = ?').bind(id));
+        await env.DB.batch(stmts);
+        return json({ ok: true, deleted_events: evs.results.length });
+      }
+
       // ---- 全量事件列表 ----
       if (path === '/api/events' && method === 'GET') {
         const rows = await env.DB.prepare('SELECT * FROM events WHERE deleted = 0 ORDER BY start_at ASC').all();
@@ -512,6 +537,15 @@ async function handleRequest(request, env) {
         return new Response(obj.body, {
           headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="backup.json"` },
         });
+      }
+      if (path.startsWith('/api/backup/') && method === 'DELETE') {
+        if (!isAdmin(auth)) return json({ error: 'admin only' }, 403);
+        const key = decodeURIComponent(path.split('/').slice(3).join('/'));
+        const row = await env.DB.prepare('SELECT key FROM backups WHERE key = ?').bind(key).first();
+        if (!row) return json({ error: 'not found' }, 404);
+        await env.BUCKET.delete(key);
+        await env.DB.prepare('DELETE FROM backups WHERE key = ?').bind(key).run();
+        return json({ ok: true });
       }
       if (path === '/api/restore' && method === 'POST') {
         if (!isAdmin(auth)) return json({ error: 'admin only' }, 403);

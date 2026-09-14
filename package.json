@@ -1,6 +1,6 @@
 {
   "name": "rili-tongbu",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "跨终端日历数据备份与同步平台（Cloudflare Workers + D1 + R2）",
   "scripts": {

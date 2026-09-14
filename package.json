@@ -1,0 +1,15 @@
+{
+  "name": "rili-tongbu",
+  "version": "0.0.1",
+  "private": true,
+  "description": "跨终端日历数据备份与同步平台（Cloudflare Workers + D1 + R2）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply rili-tongbu --remote",
+    "db:migrate:local": "wrangler d1 migrations apply rili-tongbu --local"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

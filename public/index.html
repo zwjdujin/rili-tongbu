@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>日历同步 · rili-tongbu</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
+      --ok: #22c55e; --err: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      padding: 24px 16px; max-width: 960px; margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px; margin-bottom: 16px;
+    }
+    .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+    input, select, button {
+      font-size: 14px; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button { background: var(--accent); border: none; cursor: pointer; color: #fff; }
+    button.ghost { background: transparent; border: 1px solid var(--border); }
+    button.danger { background: var(--err); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .ok { color: var(--ok); } .err { color: var(--err); }
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border); padding: 10px 16px;
+      border-radius: 8px; display: none; font-size: 13px; z-index: 10;
+    }
+    .login { max-width: 420px; margin: 12vh auto 0; text-align: center; }
+    .login .card { text-align: left; }
+    .login input { width: 100%; margin-bottom: 10px; }
+    .token-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="login-view" class="login">
+    <h1>📅 日历同步平台</h1>
+    <p class="sub">rili-tongbu v0.0.1 — 华为 / iOS / Windows 日历数据同步</p>
+    <div class="card">
+      <h2>管理员登录</h2>
+      <input id="admin-token" type="password" placeholder="输入 ADMIN_TOKEN" />
+      <button id="login-btn" style="width:100%">进入控制台</button>
+      <p class="muted" style="margin-top:10px">
+        ADMIN_TOKEN 由部署时 <code>wrangler secret put ADMIN_TOKEN</code> 设置。
+      </p>
+    </div>
+  </div>
+
+  <div id="app-view" style="display:none">
+    <h1>📅 日历同步平台</h1>
+    <p class="sub">rili-tongbu <span id="version">v0.0.1</span> ·
+      <button class="ghost" id="logout-btn" style="padding:4px 10px;font-size:12px">退出</button>
+    </p>
+
+    <div class="card">
+      <h2>已绑定终端</h2>
+      <div class="row">
+        <input id="dev-name" placeholder="设备名称，如 我的华为手机" style="flex:1;min-width:160px" />
+        <select id="dev-platform">
+          <option value="huawei">华为</option>
+          <option value="ios">iOS</option>
+          <option value="windows">Windows</option>
+          <option value="other">其他</option>
+        </select>
+        <button id="add-device">绑定新终端</button>
+      </div>
+      <table id="devices-table">
+        <thead><tr><th>名称</th><th>平台</th><th>最近同步</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted" style="margin-top:8px">新终端的同步 Token 只在创建时显示一次，请立即复制保存。</p>
+    </div>
+
+    <div class="card">
+      <h2>日历</h2>
+      <div class="row">
+        <input id="cal-name" placeholder="日历名称，如 个人" style="flex:1;min-width:160px" />
+        <input id="cal-color" type="color" value="#3b82f6" style="width:48px;padding:2px" />
+        <button id="add-calendar">新建日历</button>
+      </div>
+      <table id="calendars-table">
+        <thead><tr><th>名称</th><th>颜色</th><th>创建时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>事件总览</h2>
+      <p class="muted" id="events-count">—</p>
+      <table id="events-table">
+        <thead><tr><th>标题</th><th>开始</th><th>结束</th><th>日历</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>备份（R2 对象存储）</h2>
+      <div class="row">
+        <button id="backup-btn">立即备份</button>
+        <button class="ghost" id="refresh-backups">刷新列表</button>
+      </div>
+      <table id="backups-table">
+        <thead><tr><th>时间</th><th>事件数</th><th>大小</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>终端接入说明</h2>
+      <p class="muted" style="line-height:1.8">
+        ① 终端绑定后获得设备 Token，调用 <code>POST /api/sync</code> 推送变更并拉取增量。<br />
+        ② iOS / Windows：在日历应用中「添加订阅的日历」，地址
+        <code id="ics-url">https://&lt;你的域名&gt;/api/calendar.ics?token=设备Token</code><br />
+        ③ 华为手机：日历 App 支持通过「订阅日历 / 导入 .ics」接入同一地址。<br />
+        详细 API 见仓库 README。
+      </p>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let TOKEN = localStorage.getItem('rt_admin_token') || '';
+
+function toast(msg, ok = true) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.color = ok ? 'var(--ok)' : 'var(--err)';
+  setTimeout(() => (t.style.display = 'none'), 2500);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opts.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
+
+const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString('zh-CN') : '—');
+const fmtSize = (b) => (b > 1024 ? (b / 1024).toFixed(1) + ' KB' : b + ' B');
+
+async function loadDevices() {
+  const { devices } = await api('/api/devices');
+  const tb = $('#devices-table tbody');
+  tb.innerHTML = '';
+  for (const d of devices) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${d.name}</td><td>${d.platform}</td>
+      <td>${fmtTime(d.last_seen)}</td>
+      <td><button class="danger" style="padding:3px 8px;font-size:12px">解绑</button></td>`;
+    tr.querySelector('button').onclick = async () => {
+      if (!confirm(`解绑「${d.name}」？`)) return;
+      await api('/api/devices/' + d.id, { method: 'DELETE' });
+      loadDevices();
+    };
+    tb.appendChild(tr);
+  }
+  if (!devices.length) tb.innerHTML = '<tr><td colspan="4" class="muted">尚无绑定终端</td></tr>';
+}
+
+async function loadCalendars() {
+  const { calendars } = await api('/api/calendars');
+  const tb = $('#calendars-table tbody');
+  tb.innerHTML = calendars.map((c) =>
+    `<tr><td>${c.name}</td><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.color}"></span></td><td>${fmtTime(c.created_at)}</td></tr>`
+  ).join('') || '<tr><td colspan="3" class="muted">尚无日历</td></tr>';
+}
+
+async function loadEvents() {
+  const { events } = await api('/api/events');
+  $('#events-count').textContent = `共 ${events.length} 个事件（全平台合并视图）`;
+  const tb = $('#events-table tbody');
+  tb.innerHTML = events.slice(0, 100).map((e) =>
+    `<tr><td>${e.title}</td><td>${fmtTime(e.start_at)}</td><td>${fmtTime(e.end_at)}</td><td>${e.calendar_id}</td></tr>`
+  ).join('') || '<tr><td colspan="4" class="muted">暂无事件</td></tr>';
+}
+
+async function loadBackups() {
+  const { backups } = await api('/api/backups');
+  const tb = $('#backups-table tbody');
+  tb.innerHTML = backups.map((b) =>
+    `<tr><td>${fmtTime(b.created_at)}</td><td>${b.event_count}</td><td>${fmtSize(b.size_bytes)}</td>
+     <td><a href="#" class="muted" data-key="${b.key}">下载</a></td></tr>`
+  ).join('') || '<tr><td colspan="4" class="muted">暂无备份</td></tr>';
+  tb.querySelectorAll('a').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      window.open('/api/backup/' + encodeURIComponent(a.dataset.key) + '?t=' + encodeURIComponent(TOKEN), '_blank');
+    };
+  });
+}
+
+function showApp() {
+  $('#login-view').style.display = 'none';
+  $('#app-view').style.display = 'block';
+  Promise.all([loadDevices(), loadCalendars(), loadEvents(), loadBackups()])
+    .then(() => toast('已加载'))
+    .catch((e) => { toast('加载失败：' + e.message, false); if (String(e.message).includes('unauthorized')) logout(); });
+}
+
+function logout() {
+  localStorage.removeItem('rt_admin_token');
+  TOKEN = '';
+  $('#app-view').style.display = 'none';
+  $('#login-view').style.display = 'block';
+}
+
+$('#login-btn').onclick = async () => {
+  TOKEN = $('#admin-token').value.trim();
+  try {
+    await api('/api/devices');
+    localStorage.setItem('rt_admin_token', TOKEN);
+    showApp();
+  } catch (e) { toast('登录失败：' + e.message, false); }
+};
+$('#logout-btn').onclick = logout;
+$('#admin-token').addEventListener('keydown', (e) => e.key === 'Enter' && $('#login-btn').click());
+
+$('#add-device').onclick = async () => {
+  const name = $('#dev-name').value.trim();
+  if (!name) return toast('请输入设备名称', false);
+  const d = await api('/api/devices', { method: 'POST', body: JSON.stringify({ name, platform: $('#dev-platform').value }) });
+  loadDevices();
+  $('#dev-name').value = '';
+  prompt(`「${name}」绑定成功！同步 Token（仅显示一次，请立即复制）：`, d.token);
+};
+
+$('#add-calendar').onclick = async () => {
+  const name = $('#cal-name').value.trim();
+  if (!name) return toast('请输入日历名称', false);
+  await api('/api/calendars', { method: 'POST', body: JSON.stringify({ name, color: $('#cal-color').value }) });
+  $('#cal-name').value = '';
+  loadCalendars();
+};
+
+$('#backup-btn').onclick = async () => {
+  $('#backup-btn').disabled = true;
+  try {
+    const r = await api('/api/backup', { method: 'POST' });
+    toast(`备份完成：${r.event_count} 个事件`);
+    loadBackups();
+  } catch (e) { toast('备份失败：' + e.message, false); }
+  $('#backup-btn').disabled = false;
+};
+$('#refresh-backups').onclick = loadBackups;
+
+if (TOKEN) {
+  api('/api/devices').then(showApp).catch(logout);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+name = "rili-tongbu"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./public"
+
+[vars]
+VERSION = "0.0.1"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rili-tongbu"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "rili-tongbu"

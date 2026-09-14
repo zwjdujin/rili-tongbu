@@ -2,7 +2,7 @@
 
 跨终端日历数据备份与同步平台：华为、iOS、Windows 及其他终端的日历数据，通过统一的同步平台保持实时一致。任意终端新增 / 修改 / 删除日历事件后，其他绑定的终端立即拉取到相同变更。
 
-- 当前版本：**v0.0.2**（版本规则见下文）
+- 当前版本：**v0.0.3**（版本规则见下文）
 - 技术栈：Cloudflare Workers（API + 静态页面）+ D1（关系数据）+ R2（备份快照）
 - 部署方式：Cloudflare 控制台绑定 GitHub 仓库，push 后自动部署
 
@@ -49,9 +49,7 @@
    - **D1 / R2 名称**：Worker 代码只依赖绑定名 `DB` 和 `BUCKET`，与资源名称无关。想换其他 D1 / R2 资源，改 `wrangler.toml` 中的 `database_name` / `database_id` / `bucket_name`，或直接在 Worker 的「设置 → 绑定」中修改（控制台会自动同步回仓库配置）。
    - **管理员账号**：部署变量 `ADMIN_USER`（默认 `admin`），在 `wrangler.toml` 或 Worker 设置 → 变量中修改。
    - **管理员密码**：Secret `ADMIN_PASSWORD`，在 Worker 的「设置 → 变量和机密」中添加（Secret 不会被仓库配置覆盖）。
-3. 首次部署前需初始化 D1 表结构（二选一）：
-   - 控制台 → D1 → `rili-tongbu` → **Console**，依次粘贴执行 `migrations/0001_init.sql` 和 `migrations/0002_sessions.sql` 的内容；
-   - 或本地 `wrangler d1 migrations apply rili-tongbu --remote`。
+3. **首次部署会自动创建表结构**：无需手动执行 SQL，Worker 启动时会自动创建 `devices`、`events`、`sessions` 三个表。
 4. 之后每次 push 到 `main` 自动重新部署。
 
 ### 方式二：命令行

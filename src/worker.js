@@ -35,6 +35,59 @@ async function authenticate(request, env) {
   return device || null;
 }
 
+/** 自动初始化 D1 表结构 */
+async function initDatabase(env) {
+  const tables = await env.DB.prepare(`
+    SELECT name FROM sqlite_master WHERE type='table'
+  `).all();
+  
+  const existingTables = tables.results.map(t => t.name);
+  
+  // 创建设备表
+  if (!existingTables.includes('devices')) {
+    await env.DB.prepare(`
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_sync INTEGER
+      )
+    `).run();
+  }
+  
+  // 创建事件表
+  if (!existingTables.includes('events')) {
+    await env.DB.prepare(`
+      CREATE TABLE events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        calendar_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        start INTEGER NOT NULL,
+        end INTEGER NOT NULL,
+        all_day INTEGER,
+        location TEXT,
+        description TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (device_id) REFERENCES devices(id)
+      )
+    `).run();
+  }
+  
+  // 创建会话表
+  if (!existingTables.includes('sessions')) {
+    await env.DB.prepare(`
+      CREATE TABLE sessions (
+        token TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )
+    `).run();
+  }
+}
+
 function isAdmin(auth) {
   return auth === 'admin';
 }
@@ -264,7 +317,10 @@ async function restoreBackup(env, key) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    // 初始化数据库表（首次运行时自动创建）
+    await initDatabase(env).catch(console.error);
+    
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;

@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 directory = "./public"
 
 [vars]
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 # 管理员账号（密码请用 Secret 配置：wrangler secret put ADMIN_PASSWORD
 # 或在 Worker 设置 → 变量中添加 Secret）
 ADMIN_USER = "admin"
@@ -15,7 +15,6 @@ ADMIN_USER = "admin"
 binding = "DB"
 database_name = "rili-tongbu"
 database_id = "1e23db30-9fb6-43d0-b405-ae212ae8711c"
-migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "BUCKET"

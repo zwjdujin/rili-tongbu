@@ -82,6 +82,16 @@
       margin-bottom: 8px;
     }
     .ev-toolbar input[type="text"] { flex: 1; min-width: 140px; }
+    .scope-toggle {
+      display: flex; gap: 0; border: 1px solid var(--border); border-radius: 5px;
+      overflow: hidden; font-size: 12px;
+    }
+    .scope-toggle button {
+      background: transparent; border: none; color: var(--muted);
+      padding: 4px 10px; cursor: pointer; border-right: 1px solid var(--border);
+    }
+    .scope-toggle button:last-child { border-right: none; }
+    .scope-toggle button.on { background: var(--accent); color: #fff; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; }
@@ -155,6 +165,10 @@
     <h2>事件列表</h2>
     <div class="ev-toolbar">
       <select id="calendar-filter"><option value="">全部日历</option></select>
+      <div class="scope-toggle">
+        <button id="scope-all" class="on">全部</button>
+        <button id="scope-month">当月</button>
+      </div>
       <input type="text" id="search-input" placeholder="搜索标题 / 描述..." />
     </div>
     <table id="events-table">
@@ -238,8 +252,10 @@ const $ = (id) => document.getElementById(id);
 const TOKEN = localStorage.getItem('rt_admin_token') || '';
 let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
-let selectedDate = null;   // Date | null
+let selectedDate = null;   // Date string 'YYYY-MM-DD' | null
 let editingEvent = null;   // 当前编辑的事件对象
+let showScope = 'all';     // 'all' | 'month'
+let cachedEvents = [];     // 最近一次从服务端拉到的全量事件
 
 /* ---------------- 农历（1900-2100 标准数据表） ---------------- */
 const LUNAR_INFO = [
@@ -407,66 +423,78 @@ async function loadCalendars() {
 }
 
 async function loadEvents() {
-  const tbody = $('events-table').querySelector('tbody');
+  const tbody = $('events-table').tbody || $('events-table').querySelector('tbody');
   try {
     const params = new URLSearchParams();
     if ($('calendar-filter').value) params.append('calendar_id', $('calendar-filter').value);
     if ($('search-input').value.trim()) params.append('search', $('search-input').value.trim());
     const qs = params.toString();
     const { events } = await api('/api/events' + (qs ? '?' + qs : ''));
+    cachedEvents = (events || []).sort((a, b) => a.start_at - b.start_at);
 
-    // 客户端过滤出当月（或选中日期）的事件
-    const rangeStart = selectedDate
-      ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()).getTime()
-      : new Date(currentYear, currentMonth, 1).getTime();
-    const rangeEnd = selectedDate ? rangeStart + 86400000 : new Date(currentYear, currentMonth + 1, 1).getTime();
-    const monthEvents = (events || []).filter((e) => e.end_at >= rangeStart && e.start_at < rangeEnd)
-      .sort((a, b) => a.start_at - b.start_at);
-
-    const scope = selectedDate
-      ? `${currentMonth + 1}月${selectedDate.getDate()}日`
-      : `${currentYear}年${currentMonth + 1}月`;
-    $('events-count').textContent = selectedDate
-      ? `${scope} 当天共 ${monthEvents.length} 个事件（再次点击日期可取消筛选）`
-      : `${scope} 共 ${monthEvents.length} 个事件`;
-
-    tbody.innerHTML = monthEvents.map((e) => {
-      const s = new Date(e.start_at);
-      const p = (n) => String(n).padStart(2, '0');
-      const dateStr = `${s.getMonth() + 1}/${s.getDate()}`;
-      const timeStr = e.all_day ? '全天' : `${p(s.getHours())}:${p(s.getMinutes())}`;
-      return `<tr>
-        <td>${dateStr}</td>
-        <td>${timeStr}</td>
-        <td>${e.title}</td>
-        <td><span class="cal-chip" style="background:${e.calendar_color || '#3b82f6'}"></span>${e.calendar_name || e.calendar_id}</td>
-        <td>
-          <button class="ghost op ev-edit" data-id="${e.id}">编辑</button>
-          <button class="danger op ev-del" data-id="${e.id}">删除</button>
-        </td>
-      </tr>`;
-    }).join('') || `<tr><td colspan="5" class="muted">${selectedDate ? '当天暂无事件' : '当月暂无事件'}</td></tr>`;
-
-    tbody.querySelectorAll('.ev-del').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!confirm('确定删除此事件？删除会同步到所有终端。')) return;
-        try {
-          await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
-          toast('事件已删除');
-          loadEvents();
-        } catch (err) { toast('删除失败：' + err.message, false); }
-      };
-    });
-    tbody.querySelectorAll('.ev-edit').forEach((btn) => {
-      btn.onclick = () => {
-        const ev = monthEvents.find((x) => x.id === btn.dataset.id);
-        if (ev) openModal(ev);
-      };
-    });
+    renderEventList();
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="5" class="muted">加载失败：${err.message}</td></tr>`;
     $('events-count').textContent = '—';
   }
+}
+
+function renderEventList() {
+  const tbody = $('events-table').tbody || $('events-table').querySelector('tbody');
+  const now = new Date();
+  const curY = currentYear, curM = currentMonth;
+
+  // 按 scope 过滤
+  let list = cachedEvents;
+  if (showScope === 'month') {
+    const mStart = new Date(curY, curM, 1).getTime();
+    const mEnd = new Date(curY, curM + 1, 1).getTime();
+    list = cachedEvents.filter((e) => e.start_at < mEnd && e.end_at >= mStart);
+  }
+  // 如果选中了某一天，再叠加按天过滤
+  if (selectedDate) {
+    const dStart = new Date(selectedDate).getTime();
+    const dEnd = dStart + 86400000;
+    list = list.filter((e) => e.start_at < dEnd && e.end_at >= dStart);
+  }
+
+  const scopeLabel = showScope === 'all' ? '全部' : `${curY}年${curM + 1}月`;
+  const dayLabel = selectedDate ? ` · ${selectedDate} 当天` : '';
+  $('events-count').textContent = `${scopeLabel}${dayLabel} 共 ${list.length} 个事件`;
+
+  tbody.innerHTML = list.map((e) => {
+    const s = new Date(e.start_at);
+    const p = (n) => String(n).padStart(2, '0');
+    const dateStr = `${s.getMonth() + 1}/${s.getDate()}`;
+    const timeStr = e.all_day ? '全天' : `${p(s.getHours())}:${p(s.getMinutes())}`;
+    return `<tr>
+      <td>${dateStr}</td>
+      <td>${timeStr}</td>
+      <td>${e.title}</td>
+      <td><span class="cal-chip" style="background:${e.calendar_color || '#3b82f6'}"></span>${e.calendar_name || e.calendar_id}</td>
+      <td>
+        <button class="ghost op ev-edit" data-id="${e.id}">编辑</button>
+        <button class="danger op ev-del" data-id="${e.id}">删除</button>
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5" class="muted">${selectedDate ? '当天暂无事件' : (showScope === 'month' ? '当月暂无事件' : '暂无事件')}</td></tr>`;
+
+  tbody.querySelectorAll('.ev-del').forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm('确定删除此事件？删除会同步到所有终端。')) return;
+      try {
+        await api('/api/events/' + btn.dataset.id, { method: 'DELETE' });
+        toast('事件已删除');
+        loadEvents();
+      } catch (err) { toast('删除失败：' + err.message, false); }
+    };
+  });
+  tbody.querySelectorAll('.ev-edit').forEach((btn) => {
+    btn.onclick = () => {
+      const ev = list.find((x) => x.id === btn.dataset.id);
+      if (ev) openModal(ev);
+    };
+  });
 }
 
 /* ---------------- 弹窗表单 ---------------- */
@@ -552,6 +580,15 @@ $('month-select').onchange = () => {
   renderCalendar();
   loadEvents();
 };
+function setScope(scope) {
+  if (showScope === scope) return;
+  showScope = scope;
+  $('scope-all').classList.toggle('on', scope === 'all');
+  $('scope-month').classList.toggle('on', scope === 'month');
+  renderEventList();
+}
+$('scope-all').onclick = () => setScope('all');
+$('scope-month').onclick = () => setScope('month');
 $('calendar-filter').onchange = loadEvents;
 let searchTimer = null;
 $('search-input').oninput = () => {

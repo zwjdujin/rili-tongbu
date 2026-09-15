@@ -501,7 +501,10 @@ async function handleRequest(request, env) {
 
       // ---- 事件增删改查 ----
       if (path === '/api/events' && method === 'POST') {
-        const event = JSON.parse(req.body);
+        const event = await request.json().catch(() => null);
+        if (!event || !event.title || !Number.isFinite(Number(event.start_at))) {
+          return json({ error: 'invalid event payload' }, 400);
+        }
         const ts = now();
         const id = uuid();
         await env.DB.prepare(`
@@ -519,7 +522,10 @@ async function handleRequest(request, env) {
       }
       if (path.startsWith('/api/events/') && method === 'PUT') {
         const id = decodeURIComponent(path.split('/')[3]);
-        const event = JSON.parse(req.body);
+        const event = await request.json().catch(() => null);
+        if (!event || !event.title || !Number.isFinite(Number(event.start_at))) {
+          return json({ error: 'invalid event payload' }, 400);
+        }
         const ts = now();
         await env.DB.prepare(`
           UPDATE events SET calendar_id = ?, title = ?, start_at = ?, end_at = ?, all_day = ?, location = ?, description = ?, reminder_minutes = ?, recurrence = ?, updated_at = ? WHERE id = ? AND deleted = 0
@@ -541,7 +547,7 @@ async function handleRequest(request, env) {
           console.log('Calendars found:', calendars.results.length);
           
           let query = 'SELECT e.*, c.name as calendar_name, c.color as calendar_color FROM events e LEFT JOIN calendars c ON e.calendar_id = c.id WHERE e.deleted = 0';
-          const url = new URL(req.url);
+          const url = new URL(request.url);
           const calendar_id = url.searchParams.get('calendar_id');
           const search = url.searchParams.get('search');
           

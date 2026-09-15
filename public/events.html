@@ -192,19 +192,43 @@
           <label>日历</label>
           <select id="event-calendar"></select>
         </div>
-        <div class="form-2col">
-          <div class="form-group">
-            <label>开始 *</label>
-            <input type="datetime-local" id="event-start" required />
-          </div>
-          <div class="form-group">
-            <label>结束 *</label>
-            <input type="datetime-local" id="event-end" required />
+        <div class="form-group" id="time-row">
+          <label>时间 *</label>
+          <div class="form-2col">
+            <div><input type="datetime-local" id="event-start" required /></div>
+            <div><input type="datetime-local" id="event-end" required /></div>
           </div>
         </div>
         <div class="form-group check-line">
           <input type="checkbox" id="event-allday" />
-          <label for="event-allday" style="margin:0">全天事件</label>
+          <label for="event-allday" style="margin:0">全天事件（不区分具体时刻）</label>
+        </div>
+        <div class="form-group check-line">
+          <input type="checkbox" id="event-lunar" />
+          <label for="event-lunar" style="margin:0">农历生日（每年重复，自动算年龄）</label>
+        </div>
+        <div id="lunar-fields" style="display:none">
+          <div class="form-2col">
+            <div class="form-group">
+              <label>出生年份 *</label>
+              <input type="number" id="event-lunar-year" min="1900" max="2100" placeholder="如 1990" />
+            </div>
+            <div class="form-group">
+              <label>农历月份 *</label>
+              <select id="event-lunar-month"></select>
+            </div>
+          </div>
+          <div class="form-2col">
+            <div class="form-group">
+              <label>农历日期 *</label>
+              <select id="event-lunar-day"></select>
+            </div>
+            <div class="form-group">
+              <label>是否闰月</label>
+              <select id="event-lunar-leap"><option value="0">否</option><option value="1">是</option></select>
+            </div>
+          </div>
+          <p class="muted" id="lunar-hint" style="margin-top:4px"></p>
         </div>
         <div class="form-group">
           <label>地点</label>
@@ -224,6 +248,8 @@
               <option value="30">提前 30 分钟</option>
               <option value="60">提前 1 小时</option>
               <option value="1440">提前 1 天</option>
+              <option value="4320">提前 3 天</option>
+              <option value="10080">提前 7 天</option>
             </select>
           </div>
           <div class="form-group">
@@ -322,6 +348,19 @@ function lunarText(date) {
   if (l.day === 1) return (l.isLeap ? '闰' : '') + LUNAR_MONTHS[l.month - 1] + '月';
   return LUNAR_DAYS[l.day - 1];
 }
+// 农历 → 当年公历（用于农历生日）
+function lunarToSolar(ly, lm, ld, isLeap) {
+  for (let m = 1; m <= 12; m++) {
+    const dim = new Date(ly, m, 0).getDate();
+    for (let d = 1; d <= dim; d++) {
+      const l = solarToLunar(ly, m, d);
+      if (l && l.year === ly && l.month === lm && l.day === ld && l.isLeap === isLeap) {
+        return { year: ly, month: m, day: d };
+      }
+    }
+  }
+  return null;
+}
 
 /* ---------------- 工具 ---------------- */
 function fmtYMD(d) {
@@ -359,7 +398,19 @@ function renderCalendar() {
   const first = new Date(currentYear, currentMonth, 1);
   const gridStart = new Date(currentYear, currentMonth, 1 - first.getDay());
   const todayStr = fmtYMD(new Date());
-  const selStr = selectedDate ? fmtYMD(selectedDate) : '';
+  const selStr = selectedDate || '';
+
+  // 收集本月农历生日对应的公历日期（格子标记用）
+  const lunarDaysThisMonth = new Set();
+  for (const e of cachedEvents) {
+    const m = e.recurrence && /^LUNAR_YEARLY:(\d+):(.+):([01])$/.exec(e.recurrence);
+    if (!m) continue;
+    const [, ly, mRaw, isLeap] = m;
+    const [mv, ml] = (mRaw.includes('-leap') ? mRaw.split('-') : [mRaw, '0']);
+    const s = lunarToSolar(currentYear, parseInt(mv, 10), parseInt(mRaw), isLeap === '1' || ml === '1');
+    if (!s || s.month !== currentMonth + 1) continue;
+    lunarDaysThisMonth.add(s.day);
+  }
 
   let html = weekNames.map((w) => `<div class="cal-week">${w}</div>`).join('');
   for (let i = 0; i < 42; i++) {
@@ -371,9 +422,11 @@ function renderCalendar() {
       ds === todayStr ? 'today' : '',
       ds === selStr ? 'sel' : '',
     ].filter(Boolean).join(' ');
+    const hasLunar = d.getMonth() === currentMonth && lunarDaysThisMonth.has(d.getDate());
     html += `<div class="${cls}" data-date="${ds}">
       <span class="d-num">${d.getDate()}</span>
       <span class="d-lunar">${lunarText(d)}</span>
+      ${hasLunar ? '<span class="d-lunar" style="color:var(--accent)">🎂</span>' : ''}
     </div>`;
   }
   grid.innerHTML = html;
@@ -381,9 +434,8 @@ function renderCalendar() {
 
   grid.querySelectorAll('.cal-day').forEach((el) => {
     el.onclick = () => {
-      const [y, m, dd] = el.dataset.date.split('-').map(Number);
-      const clicked = fmtYMD(selectedDate || new Date(0));
-      selectedDate = el.dataset.date === clicked ? null : new Date(y, m - 1, dd);
+      const clicked = el.dataset.date;
+      selectedDate = clicked === selStr ? null : clicked;
       renderCalendar();
       loadEvents();
     };
@@ -440,16 +492,40 @@ async function loadEvents() {
 }
 
 function renderEventList() {
-  const tbody = $('events-table').tbody || $('events-table').querySelector('tbody');
+  const tbody = $('events-table').querySelector('tbody');
   const now = new Date();
   const curY = currentYear, curM = currentMonth;
+  const thisYear = now.getFullYear();
 
-  // 按 scope 过滤
-  let list = cachedEvents;
+  // 第一步：展开（农历生日 → 当年公历生日事件，自动算年龄）
+  const expanded = [];
+  for (const e of cachedEvents) {
+    const m = e.recurrence && /^LUNAR_YEARLY:(\d+):(.+):([01])$/.exec(e.recurrence);
+    if (m) {
+      const [, ly, mRaw, isLeap] = m;
+      const [mv, ml] = (mRaw.includes('-leap') ? mRaw.split('-') : [mRaw, '0']);
+      const s = lunarToSolar(thisYear, parseInt(mv, 10), parseInt(mRaw), isLeap === '1' || ml === '1');
+      if (!s) continue;
+      const age = thisYear - parseInt(ly, 10);
+      expanded.push(Object.assign({}, e, {
+        start_at: new Date(s.year, s.month - 1, s.day, 0, 0).getTime(),
+        end_at: new Date(s.year, s.month - 1, s.day, 0, 0).getTime() + 86400000,
+        title: `${e.title}（${age}岁）`,
+        all_day: true,
+        _lunar: true,
+      }));
+    } else {
+      expanded.push(e);
+    }
+  }
+  expanded.sort((a, b) => a.start_at - b.start_at);
+
+  // 第二步：按 scope 过滤（过滤的是展开后的当年日期，农历生日才会出现在它真正的生日月）
+  let list = expanded;
   if (showScope === 'month') {
     const mStart = new Date(curY, curM, 1).getTime();
     const mEnd = new Date(curY, curM + 1, 1).getTime();
-    list = cachedEvents.filter((e) => e.start_at < mEnd && e.end_at >= mStart);
+    list = expanded.filter((e) => e.start_at < mEnd && e.end_at >= mStart);
   }
   // 如果选中了某一天，再叠加按天过滤
   if (selectedDate) {
@@ -498,21 +574,108 @@ function renderEventList() {
 }
 
 /* ---------------- 弹窗表单 ---------------- */
+// 农历月份/日期下拉的静态选项
+const LUNAR_M_OPTS = (() => {
+  let h = '';
+  for (let m = 1; m <= 12; m++) h += `<option value="${m}">${LUNAR_MONTHS[m-1]}月</option>`;
+  return h;
+})();
+const LUNAR_D_OPTS = (() => {
+  let h = '';
+  for (let d = 1; d <= 30; d++) h += `<option value="${d}">${LUNAR_DAYS[d-1]}</option>`;
+  return h;
+})();
+function refreshLunarMonthOpts() {
+  const y = parseInt($('event-lunar-year').value, 10);
+  const leap = (y >= 1900 && y <= 2100) ? lunarLeapMonth(y) : 0;
+  let h = '';
+  for (let m = 1; m <= 12; m++) {
+    h += `<option value="${m}">${LUNAR_MONTHS[m-1]}月</option>`;
+    if (leap === m) h += `<option value="${m}-leap">闰${LUNAR_MONTHS[m-1]}月</option>`;
+  }
+  $('event-lunar-month').innerHTML = h;
+}
+function toggleLunarFields(on) {
+  $('lunar-fields').style.display = on ? '' : 'none';
+  $('event-start').required = !on;
+  $('event-end').required = !on;
+  if (on) {
+    refreshLunarMonthOpts();
+    $('event-lunar-day').innerHTML = LUNAR_D_OPTS;
+    $('event-allday').checked = true;
+    toggleAllDay(true);
+    syncLunarHint();
+  } else {
+    toggleAllDay(false);
+  }
+}
+function syncLunarHint() {
+  const y = parseInt($('event-lunar-year').value, 10);
+  const m = $('event-lunar-month').value;
+  const d = $('event-lunar-day').value;
+  const leap = ($('event-lunar-leap').value === '1');
+  const hint = $('lunar-hint');
+  if (!(y >= 1900 && y <= 2100) || !m || !d) { hint.textContent = ''; return; }
+  const [mv, isL] = (m.includes('-leap') ? m.split('-') : [m, false]);
+  const s = lunarToSolar(y, parseInt(mv, 10), parseInt(d, 10), leap || isL);
+  if (!s) { hint.textContent = '该农历日期不存在（如该年无此闰月）'; hint.style.color = 'var(--err)'; return; }
+  const age = new Date().getFullYear() - y;
+  hint.textContent = `今年对应公历 ${s.year}年${s.month}月${s.day}日 · 今年 ${age} 岁`;
+  hint.style.color = 'var(--muted)';
+}
+function toggleAllDay(on) {
+  // 全天事件只需日期，精确时刻无意义；切换时保留原始时刻，避免切回来丢数据
+  ['start', 'end'].forEach((which) => {
+    const el = $('event-' + which);
+    if (on) {
+      el.dataset._full = el.value;                     // 保留原始完整值
+      el.type = 'date';
+      el.value = el.dataset._full ? el.dataset._full.slice(0, 10) : '';
+    } else {
+      el.type = 'datetime-local';
+      // 若之前没有完整值，补默认时刻 00:00
+      el.value = (el.dataset._full || (el.value + 'T00:00'));
+      delete el.dataset._full;
+    }
+  });
+  $('event-start').required = !on;
+  $('event-end').required = !on;
+}
 function openModal(event = null) {
   editingEvent = event;
   $('modal-title').textContent = event ? '编辑事件' : '添加事件';
+  // 重置特殊字段
+  $('event-lunar').checked = false;
+  toggleLunarFields(false);
   if (event) {
     $('event-title').value = event.title;
     if ($('event-calendar').querySelector(`option[value="${event.calendar_id}"]`)) {
       $('event-calendar').value = event.calendar_id;
     }
+    // 判断是否为农历生日
+    const lun = event.recurrence && /^LUNAR_YEARLY:(\d+):(.+):([01])$/.exec(event.recurrence);
+    if (lun) {
+      const [, ly, mRaw, isLeap] = lun;
+      $('event-lunar').checked = true;
+      toggleLunarFields(true);
+      $('event-lunar-year').value = ly;
+      setTimeout(() => {
+        const opt = [...$('event-lunar-month').options].find((o) => o.value === mRaw);
+        if (opt) opt.selected = true;
+        $('event-lunar-day').value = String(parseInt(lun[2], 10) || '');
+        $('event-lunar-leap').value = isLeap;
+        syncLunarHint();
+      }, 0);
+      $('event-title').value = event.title;
+    }
     $('event-start').value = toLocalInput(event.start_at);
     $('event-end').value = toLocalInput(event.end_at);
     $('event-allday').checked = !!event.all_day;
+    toggleAllDay(!!event.all_day);
     $('event-location').value = event.location || '';
     $('event-description').value = event.description || '';
     $('event-reminder').value = event.reminder_minutes != null ? String(event.reminder_minutes) : '';
-    $('event-recurrence').value = event.recurrence || '';
+    if (!lun) $('event-recurrence').value = event.recurrence || '';
   } else {
     $('event-form').reset();
     const base = selectedDate || new Date(currentYear, currentMonth, Math.min(new Date().getDate(), 28), 0, 0);
@@ -529,19 +692,35 @@ function closeModal() {
 
 $('event-form').onsubmit = async (e) => {
   e.preventDefault();
-  const startAt = new Date($('event-start').value).getTime();
-  const endAt = new Date($('event-end').value).getTime();
+  const isLunar = $('event-lunar').checked;
+  let startAt, endAt;
+  if (isLunar) {
+    const y = parseInt($('event-lunar-year').value, 10);
+    const mRaw = $('event-lunar-month').value;
+    const d = parseInt($('event-lunar-day').value, 10);
+    const isLeap = ($('event-lunar-leap').value === '1');
+    const [mv, ml] = (mRaw.includes('-leap') ? mRaw.split('-') : [mRaw, '0']);
+    const s = lunarToSolar(y, parseInt(mv, 10), d, isLeap || ml === '1');
+    if (!s) return toast('该农历日期不存在', false);
+    startAt = new Date(s.year, s.month - 1, s.day, 0, 0).getTime();
+    endAt = startAt + 86400000;
+  } else {
+    startAt = new Date($('event-start').value).getTime();
+    endAt = new Date($('event-end').value).getTime();
+  }
   if (!(endAt > startAt)) return toast('结束时间必须晚于开始时间', false);
+  let recurrence = $('event-recurrence').value || null;
+  if (isLunar) recurrence = `LUNAR_YEARLY:${y}:${mRaw}:${isLeap ? '1' : '0'}`;
   const payload = {
     calendar_id: $('event-calendar').value || 'default',
     title: $('event-title').value.trim(),
     start_at: startAt,
     end_at: endAt,
-    all_day: $('event-allday').checked,
+    all_day: $('event-allday').checked || isLunar,
     location: $('event-location').value.trim(),
     description: $('event-description').value.trim(),
     reminder_minutes: $('event-reminder').value ? parseInt($('event-reminder').value, 10) : null,
-    recurrence: $('event-recurrence').value || null,
+    recurrence: recurrence,
   };
   try {
     if (editingEvent) {
@@ -599,6 +778,13 @@ $('add-event-btn').onclick = () => openModal();
 $('close-modal').onclick = closeModal;
 $('cancel-btn').onclick = closeModal;
 $('event-modal').onclick = (e) => { if (e.target === $('event-modal')) closeModal(); };
+
+$('event-allday').onchange = (e) => toggleAllDay(e.target.checked);
+$('event-lunar').onchange = (e) => toggleLunarFields(e.target.checked);
+$('event-lunar-year').oninput = () => { refreshLunarMonthOpts(); syncLunarHint(); };
+$('event-lunar-month').onchange = syncLunarHint;
+$('event-lunar-day').onchange = syncLunarHint;
+$('event-lunar-leap').onchange = syncLunarHint;
 
 /* ---------------- 初始化 ---------------- */
 populateYearMonth();

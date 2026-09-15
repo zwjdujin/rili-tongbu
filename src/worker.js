@@ -535,28 +535,36 @@ async function handleRequest(request, env) {
         return json({ ok: true });
       }
       if (path === '/api/events' && method === 'GET') {
-        const url = new URL(req.url);
-        const calendar_id = url.searchParams.get('calendar_id');
-        const search = url.searchParams.get('search');
-        let query = 'SELECT e.*, c.name as calendar_name, c.color as calendar_color FROM events e LEFT JOIN calendars c ON e.calendar_id = c.id WHERE e.deleted = 0';
-        const params = [];
-        if (calendar_id) {
-          query += ' AND e.calendar_id = ?';
-          params.push(calendar_id);
+        try {
+          // 先检查是否有日历数据
+          const calendars = await env.DB.prepare('SELECT * FROM calendars').all();
+          console.log('Calendars found:', calendars.results.length);
+          
+          let query = 'SELECT e.*, c.name as calendar_name, c.color as calendar_color FROM events e LEFT JOIN calendars c ON e.calendar_id = c.id WHERE e.deleted = 0';
+          const url = new URL(req.url);
+          const calendar_id = url.searchParams.get('calendar_id');
+          const search = url.searchParams.get('search');
+          
+          if (calendar_id) {
+            query += ' AND e.calendar_id = ?';
+          }
+          if (search) {
+            query += ' AND (e.title LIKE ? OR e.description LIKE ?)';
+          }
+          query += ' ORDER BY e.start_at DESC';
+          
+          console.log('Final query:', query);
+          const params = calendar_id ? [calendar_id] : [];
+          if (search) params.push(`%${search}%`, `%${search}%`);
+          
+          const { results } = await env.DB.prepare(query).bind(...params).all();
+          console.log('Events found:', results.length);
+          
+          return json({ events: results });
+        } catch (error) {
+          console.error('Events API error:', error);
+          return json({ error: 'Failed to fetch events: ' + error.message }, 500);
         }
-        if (search) {
-          query += ' AND (e.title LIKE ? OR e.description LIKE ?)';
-          params.push(`%${search}%`, `%${search}%`);
-        }
-        query += ' ORDER BY e.start_at DESC';
-        const { results } = await env.DB.prepare(query).bind(...params).all();
-        return json({ events: results });
-      }
-
-      // ---- 全量事件列表 ----
-      if (path === '/api/events' && method === 'GET') {
-        const rows = await env.DB.prepare('SELECT * FROM events WHERE deleted = 0 ORDER BY start_at ASC').all();
-        return json({ events: rows.results });
       }
 
       // ---- 增量同步（设备专用）----
